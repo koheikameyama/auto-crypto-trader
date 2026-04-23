@@ -1,11 +1,15 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**現在ステータス:** **ACTIVE（Round 6 以降へ継続）** ← Round 5 で **9 ラウンドで初の BH 超え達成**
-**現在までの結論:** **Round 5 (funding rate 統合 4-signal continuous sizing) で初めて Buy & Hold を Out-of-Sample Sharpe で上回った**（R5 v2: 0.933 > BH 0.871、drop 24.3% で過学習耐性も最良）。R1-R4b の全 failure → R4c の partial positive → R4d Step 3 の構造的ブレークスルー → R5 で BH 超え、と段階的に進化。
-**データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン 10年 (CoinMetrics Community)、DXY/VIX 10年 (yfinance)、**BTCUSDT perp funding rate 6.5年 (Binance)**。
+**現在ステータス:** **ACTIVE（Round 7 以降へ継続）** ← R5 初 BH 超え、R6 で均等重みの限界を発見、次は weighted ensemble
+**現在までの結論:**
+- **R5 v2 (6.5y, 4-signal +funding)**: Sharpe **0.933** (BH 0.871 超え ★)、DD 43.92%、drop 24.3%
+- **R6 v3 (10y, 4-signal +TNX)**: Sharpe **0.930**、**DD 36.22% (BH 83% から大幅削減)**、drop 30.5%
+- **R6 v4 (6.5y, 5-signal 全部)**: Sharpe 0.913 (dilution で微減)、DD **34.39%** (最良)、drop 26.8%
+- 均等重みで 4 signal がピーク、5 signal は Sharpe dilution。次は weight 最適化
+**データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン 10年、DXY/VIX/TNX 10年、BTCUSDT perp funding rate 6.5年。
 
-> **ドキュメント履歴:** 本 document は Round 3 の findings として作成、途中 2 回「DONE」宣言したが誤判断と認識。R4d Step 3 で構造的ブレークスルー、**R5 で初 BH 超え**。Round 6 以降も本 repo で継続。§11-§14 は追補、詳細は個別 findings 参照。
+> **ドキュメント履歴:** Round 3 findings として作成、途中 2 回「DONE」宣言は誤判断。R4d Step 3 で構造的ブレークスルー、**R5 で初 BH 超え**、**R6 で DD 削減効果確認 + signal dilution 問題発見**。Round 7 以降も本 repo で継続。§11-§15 は追補、詳細は個別 findings 参照。
 
 ---
 
@@ -453,3 +457,52 @@ R4d S2: Multi-signal AND filter             → FAIL (filter death)
 R4d S3: Multi-signal continuous sizing (3)  → PARTIAL POSITIVE (drop 29.3%)
 R5  : Add funding rate (4-signal)           → ★ BEATS BH (Sharpe 0.933 > 0.871, drop 24.3%)
 ```
+
+---
+
+## 15. 追補 — Round 6 (TNX 統合、DD 削減 + signal dilution 発見)
+
+### 仮説 H5
+「US 10Y yield は最重要のマクロ risk signal の一つ。rising yield = tight money = crypto bearish」
+
+### 実装
+- `^TNX` を 5 signal 目（continuous-sizing-v4）または 4 signal 目 +TNX 版 (v3) として追加
+- v3: 4-signal (onchain + DXY + VIX + TNX)、10y 検証可能（funding 除外）
+- v4: 5-signal 全部、6.5y（funding 含む）
+
+### 結果（10y）
+
+| 戦略 | OOS Sharpe | OOS Max DD | drop | Beats BH 10y (1.102) |
+|---|---|---|---|---|
+| R4d Step 3 (3-sig) | 0.903 | 47.91% | 29.3% | NO |
+| **R6 v3 (+TNX)** | 0.930 | **36.22%** (-11.7pp) | 30.5% | NO |
+
+### 結果（6.5y）
+
+| 戦略 | OOS Sharpe | OOS Max DD | drop | Beats BH 6.5y (0.871) |
+|---|---|---|---|---|
+| R5 v2 (4-sig +funding) | **0.933** ★ | 43.92% | 24.3% | YES |
+| **R6 v4 (5-sig 全部)** | 0.913 | **34.39%** (-9.5pp) | 26.8% | YES |
+
+### 観察
+
+- **TNX は DD 削減に強力** (10y で -11.7pp、6.5y で -9.5pp)
+- **Sharpe 改善は marginal** (+0.03 on 10y、-0.02 on 6.5y)
+- **Signal dilution 問題**: R5 v2 → R6 v4 で Sharpe 低下 → 均等重み 5-signal では強い signal (funding, onchain) が薄まる
+- **DXY と TNX の情報重複**: 両方とも tight money を反映 → 追加効果薄
+
+### 次方向
+
+Round 7 で **weighted ensemble** を探求（詳細: [round-6-findings.md §6](round-6-findings.md)）。Signal correlation 分析 → 手動 weight → data-driven weight の順で。
+
+### 成果物追加（Round 6 分）
+
+- コード:
+  - `scripts/backfill-macro.ts`: `^TNX` 追加
+  - `src/backtest/continuous-sizing-v3-engine.ts` (4-sig +TNX)
+  - `src/backtest/continuous-sizing-v4-engine.ts` (5-sig 全部)
+  - `scripts/walk-forward-continuous-sizing-v3.ts` (10y WF + R4d S3 再計算)
+  - `scripts/walk-forward-continuous-sizing-v4.ts` (6.5y WF + R5 v2 再計算)
+- DB: `MacroBar` に `^TNX` 2,512 rows、`WalkForwardRun` 2 rows
+- レポート: `continuous-sizing-v3-*.md`, `continuous-sizing-v4-*.md`, [round-6-findings.md](round-6-findings.md)
+- 実績工数: 約 1.5h

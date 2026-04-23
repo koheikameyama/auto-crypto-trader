@@ -4,7 +4,7 @@ import { fetchMacroDaily } from "../src/data/macro-loader.js";
 
 const prisma = new PrismaClient();
 
-const TICKERS = ["DX-Y.NYB", "^VIX"];
+const TICKERS = ["DX-Y.NYB", "^VIX", "^TNX"];
 
 async function main() {
   const years = 10;
