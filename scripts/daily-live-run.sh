@@ -8,6 +8,15 @@ set -euo pipefail
 REPO_DIR="/Users/kouheikameyama/development/auto-crypto-trader"
 cd "$REPO_DIR"
 
+# Load optional env config (SLACK_WEBHOOK_URL etc.)
+ENV_FILE="$HOME/.config/auto-crypto-trader/env"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
 # Logging
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "=== daily-live-run.sh started $TS ==="
@@ -49,5 +58,11 @@ echo "--- BTC-USD ---"
 # Run ETH rebalance
 echo "--- ETH-USD ---"
 /Users/kouheikameyama/.asdf/shims/npx tsx scripts/live-rebalance.ts --asset=ETH-USD --initial-capital=10000
+
+# Slack notification (optional; only if SLACK_WEBHOOK_URL is set)
+if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+  echo "--- Slack notify ---"
+  bash "$REPO_DIR/scripts/slack-notify.sh" || echo "slack-notify failed (non-fatal)"
+fi
 
 echo "=== daily-live-run.sh finished $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="

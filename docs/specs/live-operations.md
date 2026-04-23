@@ -134,7 +134,54 @@ npx tsx scripts/live-dashboard.ts --asset=BTC-USD --days=30
 </plist>
 ```
 
-### 4.3 現在の運用設定 (2026-04-24 〜)
+### 4.3 Slack 通知の設定（任意）
+
+daily-live-run.sh は `SLACK_WEBHOOK_URL` が設定されていれば実行終了後に Slack へ結果を投稿する。
+
+**初期セットアップ:**
+
+1. Slack Incoming Webhook を発行
+   - <https://api.slack.com/apps> → **Create New App** → "From scratch"
+   - 通知先 channel を持つ workspace を選択
+   - 作成後、左メニュー **Incoming Webhooks** → ON
+   - **Add New Webhook to Workspace** → channel 選択 → Allow
+   - 表示された Webhook URL（`https://hooks.slack.com/services/...`）をコピー
+
+2. ローカルで env ファイルを作成
+   ```fish
+   mkdir -p ~/.config/auto-crypto-trader
+   cp .env.live.example ~/.config/auto-crypto-trader/env
+   chmod 600 ~/.config/auto-crypto-trader/env
+   # エディタで開いて SLACK_WEBHOOK_URL=<コピーした URL> を設定
+   ```
+
+3. 動作確認（即座に通知を送信）
+   ```fish
+   SLACK_WEBHOOK_URL='<your url>' bash scripts/slack-notify.sh
+   ```
+   → Slack channel に今日の結果が投稿される。届けば成功。
+
+**通知フォーマット例:**
+
+```
+📊 Scheme E Daily Run — 2026-04-24
+
+BTC-USD
+• Price: $78,203.10
+• Target: 67.9% long
+• Equity: $9,993.21 (-0.07%)
+• Rebalanced: ✅ (fee $6.79)
+
+ETH-USD
+• Price: $2,376.09
+• Target: 47.7% long
+• Equity: $9,995.24 (-0.05%)
+• Rebalanced: ✅ (fee $4.76)
+```
+
+**無効化:** env ファイルから `SLACK_WEBHOOK_URL` を削除 or コメントアウト。daily-live-run.sh は webhook URL が空なら通知 step を skip する。
+
+### 4.4 現在の運用設定 (2026-04-24 〜)
 
 本 repo の `scripts/com.user.auto-crypto-trader.live.plist` が **本番稼働中** の plist。
 
