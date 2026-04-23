@@ -16,6 +16,7 @@ from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
+import datetime
 import urllib.request
 import urllib.parse
 import json
@@ -419,6 +420,96 @@ async def onchain_daily(asset: str, start: str, end: str):
         raise
     except Exception as e:
         logger.error(f"Failed to fetch onchain/daily for {asset}: {e}")
+        raise HTTPException(status_code=500, detail=str(e) or type(e).__name__)
+
+
+# ========================================
+# Binance Futures Funding Rate
+# ========================================
+
+_BINANCE_FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+_BINANCE_PAGE_LIMIT = 1000
+
+
+def _fetch_binance_funding_page(
+    symbol: str, start_ms: int | None, end_ms: int | None
+) -> list[dict]:
+    params: dict[str, str] = {
+        "symbol": symbol,
+        "limit": str(_BINANCE_PAGE_LIMIT),
+    }
+    if start_ms is not None:
+        params["startTime"] = str(start_ms)
+    if end_ms is not None:
+        params["endTime"] = str(end_ms)
+    url = f"{_BINANCE_FUNDING_URL}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "auto-crypto-trader/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@app.get("/funding/daily")
+async def funding_daily(symbol: str, start: str, end: str):
+    """
+    Binance USDT-M perp funding rate を取得して日次集計する。
+
+    symbol: 'BTCUSDT' etc.
+    start, end: 'YYYY-MM-DD'
+    Returns: [{ date, avgRate, count }] (UTC 日単位で 3 回分の mean)
+    """
+    try:
+        start_dt = datetime.datetime.strptime(start, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc
+        )
+        end_dt = datetime.datetime.strptime(end, "%Y-%m-%d").replace(
+            tzinfo=datetime.timezone.utc
+        ) + datetime.timedelta(days=1)
+        start_ms = int(start_dt.timestamp() * 1000)
+        end_ms = int(end_dt.timestamp() * 1000)
+
+        all_rows: list[dict] = []
+        cursor_start = start_ms
+        loop = asyncio.get_event_loop()
+        while True:
+            page = await loop.run_in_executor(
+                None,
+                lambda s=cursor_start: _fetch_binance_funding_page(symbol, s, end_ms),
+            )
+            if not page:
+                break
+            all_rows.extend(page)
+            if len(page) < _BINANCE_PAGE_LIMIT:
+                break
+            last_time = page[-1].get("fundingTime")
+            if last_time is None:
+                break
+            cursor_start = int(last_time) + 1
+            if cursor_start > end_ms:
+                break
+
+        # Aggregate by UTC date
+        by_date: dict[str, list[float]] = {}
+        for row in all_rows:
+            ft = row.get("fundingTime")
+            rate_str = row.get("fundingRate", "0")
+            if ft is None:
+                continue
+            rate = float(rate_str)
+            d = datetime.datetime.fromtimestamp(int(ft) / 1000, tz=datetime.timezone.utc)
+            date_str = d.strftime("%Y-%m-%d")
+            by_date.setdefault(date_str, []).append(rate)
+
+        result = []
+        for date_str in sorted(by_date.keys()):
+            rates = by_date[date_str]
+            result.append({
+                "date": date_str,
+                "avgRate": sum(rates) / len(rates),
+                "count": len(rates),
+            })
+        return {"symbol": symbol, "bars": result}
+    except Exception as e:
+        logger.error(f"Failed to fetch funding/daily for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e) or type(e).__name__)
 
 

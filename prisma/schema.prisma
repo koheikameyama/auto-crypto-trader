@@ -31,6 +31,17 @@ model OnchainMetric {
   @@index([assetId, date])
 }
 
+model FundingRate {
+  id      String   @id @default(cuid())
+  symbol  String
+  date    DateTime
+  avgRate Float
+  count   Int
+
+  @@unique([symbol, date])
+  @@index([symbol, date])
+}
+
 model MacroBar {
   id     String   @id @default(cuid())
   ticker String

@@ -1,11 +1,11 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**現在ステータス:** **ACTIVE（Round 5 以降へ継続）** ← Round 4d Step 3 でブレークスルーを得て研究継続
-**現在までの結論:** 8 ラウンド（FX R1/2 + crypto R3/4a/4b/4c/4d-Step1/Step2/Step3）で **予測ベース戦略は全滅、Round 4d Step 3 で初めて過学習を構造的に突破**（IS→OOS drop 29.3%、Sharpe 0.903）。この Step 3 を土台に BH 超えを目指して継続する。
-**データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン指標（CoinMetrics Community）、DXY/VIX 10年（yfinance）。
+**現在ステータス:** **ACTIVE（Round 6 以降へ継続）** ← Round 5 で **9 ラウンドで初の BH 超え達成**
+**現在までの結論:** **Round 5 (funding rate 統合 4-signal continuous sizing) で初めて Buy & Hold を Out-of-Sample Sharpe で上回った**（R5 v2: 0.933 > BH 0.871、drop 24.3% で過学習耐性も最良）。R1-R4b の全 failure → R4c の partial positive → R4d Step 3 の構造的ブレークスルー → R5 で BH 超え、と段階的に進化。
+**データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン 10年 (CoinMetrics Community)、DXY/VIX 10年 (yfinance)、**BTCUSDT perp funding rate 6.5年 (Binance)**。
 
-> **ドキュメント履歴:** 本 document は当初 Round 3 の findings として作成、途中 2 回「DONE」宣言したが誤判断と認識。R4d Step 3 のブレークスルー後、本 repo で Round 5 以降を継続する方針に訂正。§11-§13 は追補、詳細は個別 findings 参照。
+> **ドキュメント履歴:** 本 document は Round 3 の findings として作成、途中 2 回「DONE」宣言したが誤判断と認識。R4d Step 3 で構造的ブレークスルー、**R5 で初 BH 超え**。Round 6 以降も本 repo で継続。§11-§14 は追補、詳細は個別 findings 参照。
 
 ---
 
@@ -372,3 +372,84 @@ R4d Step 3: Multi-signal continuous sizing   → PARTIAL POSITIVE ★★
 - DB: `MacroBar` 5,026 rows (DXY 2,513 + VIX 2,513)、`WalkForwardRun` 3 rows
 - レポート: Round 4d の WF md 3 本 + [round-4d-findings.md](round-4d-findings.md)
 - 実績工数: 約 2.5h
+
+---
+
+## 14. 追補 — Round 5 (funding rate 統合、初の BH 超え ★)
+
+### 仮説 H4
+「Funding rate は市場参加者の意思を直接測定する最も純粋な sentiment signal」
+
+### 実装
+- 4 つ目の signal として BTCUSDT perp funding rate を追加
+- Binance Futures public API (無料、2019-10 以降 6.5 年分)
+- Continuous sizing v2 engine: `(onchain + dxy + vix + funding) / 4`
+- Rolling percentile で regime 変化に適応
+
+### 結果 (同一 6.5y 期間比較)
+
+| 戦略 | OOS Sharpe | OOS Max DD | IS→OOS Drop | Beats BH |
+|---|---|---|---|---|
+| BH baseline | 0.871 | 76.63% | — | — |
+| R4d Step 3 (3-signal 再計算) | 0.747 | 46.84% | 38.2% | NO |
+| **R5 v2 (4-signal) ★** | **0.933** | **43.92%** | **24.3%** | **YES ★** |
+
+### ブレークスルー
+
+1. **本 repo 9 ラウンドで初めて OOS Sharpe で BH 超え** (+7.1% vs BH)
+2. **Drop 24.3%** — R4d Step 3 の 29.3% を更に改善、9 ラウンド最良
+3. **DD 44%** — BH 77% の約半分
+4. Funding rate signal が Sharpe を **+0.186 貢献** (R4d S3 → R5 v2 同期間)
+
+### Strict criteria 判定
+
+- Sharpe ≥ 1.0: **惜しい** (0.933、BH 自体が 0.87 の 6.5y 期間で絶対値 1.0 は厳しい)
+- DD ≤ 50%: ✓ (44%)
+- Drop ≤ 30%: ✓ (24.3%)
+- **Beats BH: ✓ ★**
+
+3/4 pass。絶対 Sharpe 1.0 未達のみ。しかし **BH を超えた事実が 9 ラウンドの積み重ねで初の本質的 positive**。
+
+### 核となる原理（本 repo の決定版）
+
+1. **予測ではなく regime signal**
+2. **Hard filter ではなく continuous sizing**
+3. **単一 signal ではなく独立な multi-signal の soft voting**
+4. **Funding rate のような "market-participant-intent" signal が predictive power を持つ**
+
+詳細: [round-5-findings.md](round-5-findings.md)
+
+### Round 6 以降の候補
+
+- **Open Interest 追加 (5 signal)**: Binance OI 無料、既存 framework 直接拡張 → 最も cost-efficient
+- **Kalman filter 動的 weight**: signal 重みを市場 regime に応じて調整
+- **Glassnode 有料 tier で signal 強化**: MVRV-Z / NUPL の "本物"
+- **実運用検証**: paper trading 3-6ヶ月
+
+### 成果物追加（Round 5 分）
+
+- コード:
+  - `yfinance-service/main.py`: `/funding/daily` endpoint (Binance proxy)
+  - `prisma/schema.prisma`: `FundingRate` モデル + migration `20260423142114_add_funding_rate`
+  - `src/data/funding-loader.ts`
+  - `scripts/backfill-funding-rate.ts`
+  - `src/backtest/continuous-sizing-v2-engine.ts` (4-signal)
+  - `scripts/walk-forward-continuous-sizing-v2.ts` (WF + R4d S3 6.5y 再計算)
+- DB: `FundingRate` 2,397 rows (BTCUSDT, 2019-10〜)、`WalkForwardRun` 1 row
+- レポート: `reports/walk-forward/continuous-sizing-v2-BTC-USD-*.md` + [round-5-findings.md](round-5-findings.md)
+- 実績工数: 約 1.5h（既存 framework 流用で高速）
+
+### 累積サマリ（R1-R5）
+
+```
+R1 : FX 日足 × 4 戦略 × 3 ペア              → FAIL (0/12)
+R2 : FX 4h × MA Crossover                   → FAIL
+R3 : crypto 日足 × 4 戦略                    → FAIL (0/8)
+R4a: SMA50 trend filter                     → FAIL (0/8)
+R4b: BTC-ETH pair trade                     → FAIL (最悪)
+R4c: Onchain binary regime                  → FAIL (partial: DD 半減)
+R4d S1: Trailing stop BH                    → FAIL
+R4d S2: Multi-signal AND filter             → FAIL (filter death)
+R4d S3: Multi-signal continuous sizing (3)  → PARTIAL POSITIVE (drop 29.3%)
+R5  : Add funding rate (4-signal)           → ★ BEATS BH (Sharpe 0.933 > 0.871, drop 24.3%)
+```
