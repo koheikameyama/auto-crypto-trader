@@ -76,6 +76,23 @@ npx tsx scripts/live-dashboard.ts --asset=BTC-USD --days=60
 
 ---
 
+## 3.5. Virtual P&L (Phase 1.5) 運用
+
+実資金を使わず「もし運用していたら今いくら？」を日次追跡。
+
+```fish
+# BTC 初期化（初回のみ、資金 $10,000 想定）
+npx tsx scripts/live-rebalance.ts --asset=BTC-USD --initial-capital=10000
+
+# ETH も同様
+npx tsx scripts/live-rebalance.ts --asset=ETH-USD --initial-capital=10000
+
+# ダッシュボードで equity curve 確認
+npx tsx scripts/live-dashboard.ts --asset=BTC-USD --days=30
+```
+
+---
+
 ## 4. スケジューリング
 
 ### 4.1 cron (Linux)
@@ -117,11 +134,30 @@ npx tsx scripts/live-dashboard.ts --asset=BTC-USD --days=60
 </plist>
 ```
 
-有効化:
+### 4.3 現在の運用設定 (2026-04-24 〜)
+
+本 repo の `scripts/com.user.auto-crypto-trader.live.plist` が **本番稼働中** の plist。
+
+- **実行時刻**: 毎日 **09:05 JST** (= 00:05 UTC、Binance funding / DXY 更新直後)
+- **実行内容**: `scripts/daily-live-run.sh` → sidecar 起動 → BTC/ETH 両 rebalance → sidecar 停止
+- **ログ**: `/tmp/auto-crypto-trader-live.{out,err}.log`
+- **初回 backfill**: BTC-USD / ETH-USD 両方で 2026-04-23 に $10,000 スタート済
+
+有効化（既に完了、参考）:
 
 ```fish
+cp scripts/com.user.auto-crypto-trader.live.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.user.auto-crypto-trader.live.plist
-launchctl start com.user.auto-crypto-trader.live
+# 動作確認
+launchctl list | grep auto-crypto
+# 手動実行（テスト用）
+launchctl kickstart -k gui/$(id -u)/com.user.auto-crypto-trader.live
+```
+
+停止（必要時）:
+
+```fish
+launchctl unload ~/Library/LaunchAgents/com.user.auto-crypto-trader.live.plist
 ```
 
 ---

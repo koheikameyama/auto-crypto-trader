@@ -1,0 +1,31 @@
+{
+  "date": "2026-04-23",
+  "asset": "ETH-USD",
+  "price": 2376.088134765625,
+  "signal": {
+    "dxyValue": 98.58999633789062,
+    "dxyScore": 0.4875153937961415,
+    "fundingValue": 0.00004008,
+    "fundingScore": 0.4602739726027397,
+    "targetPosition": 0.47661882531878075
+  },
+  "portfolio": {
+    "cashUsd": 5233.811746812193,
+    "units": 2.0038931875862884,
+    "equityUsd": 9995.23857317364,
+    "actualPosition": 0.4763695024889858,
+    "rebalancedToday": true,
+    "rebalanceDelta": 2.0038931875862884,
+    "feeUsd": 4.761426826360548
+  },
+  "cumulative": {
+    "return": -0.0004761426826360548,
+    "fee": 4.761426826360548
+  },
+  "config": {
+    "wDxy": 0.6,
+    "wFunding": 0.4,
+    "rebalanceThreshold": 0.1,
+    "initialCapital": 10000
+  }
+}
