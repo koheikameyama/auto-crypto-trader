@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+reports/backtests/*.json
+!reports/backtests/.gitkeep
+*.log
+yfinance-service/__pycache__/
+yfinance-service/.venv/

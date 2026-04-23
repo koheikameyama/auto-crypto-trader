@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Asset {
+  id             String     @id @default(cuid())
+  symbol         String     @unique
+  yfinanceTicker String     @unique
+  feeRate        Float
+  dailyBars      DailyBar[]
+  trades         Trade[]
+}
+
+model DailyBar {
+  id      String   @id @default(cuid())
+  assetId String
+  asset   Asset    @relation(fields: [assetId], references: [id])
+  date    DateTime
+  open    Float
+  high    Float
+  low     Float
+  close   Float
+  volume  Float?
+
+  @@unique([assetId, date])
+  @@index([assetId, date])
+}
+
+model BacktestRun {
+  id             String   @id @default(cuid())
+  strategy       String
+  assetSymbol    String?
+  startDate      DateTime
+  endDate        DateTime
+  initialCapital Float
+  params         Json
+  totalReturn    Float
+  sharpe         Float
+  mar            Float
+  profitFactor   Float
+  maxDrawdown    Float
+  winRate        Float
+  tradeCount     Int
+  expectancy     Float
+  createdAt      DateTime @default(now())
+  trades         Trade[]
+  reportPath     String?
+
+  @@index([strategy, assetSymbol, createdAt])
+}
+
+model WalkForwardRun {
+  id              String   @id @default(cuid())
+  strategy        String
+  assetSymbol     String
+  startDate       DateTime
+  endDate         DateTime
+  isDays          Int
+  oosDays         Int
+  stepDays        Int
+  oosAvgSharpe    Float
+  oosAvgMar       Float
+  oosAvgPf        Float
+  oosMaxDd        Float
+  isOosSharpeDrop Float
+  passed          Boolean
+  windows         Json
+  createdAt       DateTime @default(now())
+  reportPath      String?
+
+  @@index([strategy, assetSymbol, createdAt])
+}
+
+model Trade {
+  id            String      @id @default(cuid())
+  backtestRunId String
+  backtestRun   BacktestRun @relation(fields: [backtestRunId], references: [id])
+  assetId       String
+  asset         Asset       @relation(fields: [assetId], references: [id])
+  strategy      String
+  side          String
+  entryDate     DateTime
+  entryPrice    Float
+  exitDate      DateTime?
+  exitPrice     Float?
+  exitReason    String?
+  sizeUnits     Float
+  pnlUsd        Float?
+  holdingDays   Int?
+
+  @@index([backtestRunId])
+  @@index([assetId, entryDate])
+}

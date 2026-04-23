@@ -1,0 +1,46 @@
+{
+  "name": "auto-crypto-trader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "backfill:prices": "tsx scripts/backfill-crypto-prices.ts",
+    "backtest:donchian": "tsx src/backtest/donchian-run.ts",
+    "backtest:ma-crossover": "tsx src/backtest/ma-crossover-run.ts",
+    "backtest:rsi-reversion": "tsx src/backtest/rsi-reversion-run.ts",
+    "backtest:nr7": "tsx src/backtest/nr7-run.ts",
+    "backtest:combined": "tsx src/backtest/crypto-combined-run.ts",
+    "walk-forward:donchian": "tsx scripts/walk-forward-donchian.ts",
+    "walk-forward:ma-crossover": "tsx scripts/walk-forward-ma-crossover.ts",
+    "walk-forward:rsi-reversion": "tsx scripts/walk-forward-rsi-reversion.ts",
+    "walk-forward:nr7": "tsx scripts/walk-forward-nr7.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "dayjs": "^1.11.13",
+    "hono": "^4.6.0",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.13.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^2.1.0"
+  }
+}
