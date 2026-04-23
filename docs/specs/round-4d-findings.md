@@ -117,11 +117,11 @@ BH 1.102 に対し Step 3 が 0.903 = **82% の効率**。Round 4c の 0.684 (62
 3. **Short allocation**: bearish 時に cash ではなく short perp（infrastructure 要件大）
 4. **Holdings の multi-asset**: BTC + ETH の相関低 regime で diversify
 
-最も**期待値×実装コストが良い**のは 1（funding rate 追加）。別 repo で試す価値あり。
+最も**期待値×実装コストが良い**のは 1（funding rate 追加）。**本 repo で Round 5 として継続するのが自然**（Step 3 engine と既存インフラを直接活用できる）。
 
 ---
 
-## 6. 本 repo の最終ステータス
+## 6. 本 repo の現在ステータスと継続方針
 
 ### 全ラウンド累積 (R1-R4d)
 
@@ -138,26 +138,34 @@ Round 4d: Risk-managed BH 3-step progression
   Step 3: Multi-signal continuous sizing              → PARTIAL POSITIVE ★
 ```
 
-### 最終的な positive result
+### 現在の positive result
 
-**Round 4d Step 3 が本 repo の最終的な positive**:
+**Round 4d Step 3 が本 repo の最良成果**:
 - 8 ラウンドで初の **IS→OOS drop < 30%**（過学習突破）
-- Sharpe 0.903（BH 1.102 の 82%、MR 6x）
+- Sharpe 0.903（BH 1.102 の 82%、MAR は BH の 6x）
 - DD 48%（BH 83% の 57%）
 - 採用された signal: BTC onchain (NVT proxy + AA momentum) + DXY SMA + VIX level
 
-### 本 repo はこの時点で **正式 DONE（3 度目、今度こそ真の最終）**
+### 本 repo は **継続中**（Round 5 以降へ）
 
-### 次プロジェクトへの示唆（別 repo）
+先行する 2 回の「DONE 宣言」は **8 ラウンドの途中で過度に早く閉じた誤った判断**だった。R4d Step 3 で構造的ブレークスルーを得た以上、本 repo での研究を継続するのが論理的。
 
-Step 3 の成果を土台に、BH 超えを目指すなら以下の方向性:
+### Round 5 以降の方向性（本 repo で継続）
 
-1. **Funding rate 統合**: Binance Futures public API（無料）で過去 5 年分の funding を取得し、4 つ目の signal として追加
+Step 3 の成果を土台に、BH 超えを目指す候補:
+
+1. **Funding rate 統合** ★ Round 5 の第一候補: Binance Futures public API（無料）で過去 5 年分の funding を取得し、4 つ目の signal として追加
 2. **Kalman Filter ベースの動的 weight**: 各 signal の信頼度を市場体制に応じて調整
 3. **Glassnode 有料 tier での signal 拡張**: MVRV-Z、NUPL、Puell Multiple の「本物」
 4. **低頻度実運用**: 本 repo で validated された strategy を小額で本番稼働し、実世界データで再検証
 
-これらは Round 4d Step 3 の engine (`continuous-sizing-engine.ts`) を直接流用可能。
+本 repo の資産を全て流用:
+- Engine: `continuous-sizing-engine.ts` を拡張
+- DB: `OnchainMetric` / `MacroBar` は既存、新 signal 用テーブルだけ追加
+- Tests: 176 件のグリーン基盤に追加
+- Data: BTC 10 年・onchain 10 年・DXY/VIX 10 年 backfill 済み
+
+別 repo への分離は**実運用スクリプト（定期実行・取引所 API・アラート）**を追加する段階で検討。それまでは本 repo で research を継続する。
 
 ---
 

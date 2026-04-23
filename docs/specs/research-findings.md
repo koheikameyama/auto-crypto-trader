@@ -1,11 +1,11 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**最終ステータス:** **DONE（プロジェクト完全クローズ、3 度目の最終）** ← Round 4d 完了後に真の最終確定
-**結論:** 8 ラウンド（FX R1/2 + crypto R3/4a/4b/4c/4d-Step1/Step2/Step3）で **予測ベース戦略は全滅、ただし Round 4d Step 3 で初めて過学習を構造的に突破**（IS→OOS drop 29.3%、Sharpe 0.903）。
+**現在ステータス:** **ACTIVE（Round 5 以降へ継続）** ← Round 4d Step 3 でブレークスルーを得て研究継続
+**現在までの結論:** 8 ラウンド（FX R1/2 + crypto R3/4a/4b/4c/4d-Step1/Step2/Step3）で **予測ベース戦略は全滅、Round 4d Step 3 で初めて過学習を構造的に突破**（IS→OOS drop 29.3%、Sharpe 0.903）。この Step 3 を土台に BH 超えを目指して継続する。
 **データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン指標（CoinMetrics Community）、DXY/VIX 10年（yfinance）。
 
-> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3 の findings として作成。その後 R4a/4b/4c/4d を追加実施。**Round 4d Step 3 が本 repo の最終的な positive**（マルチ signal continuous sizing）。§11-§13 に追補、詳細は個別 findings 参照。
+> **ドキュメント履歴:** 本 document は当初 Round 3 の findings として作成、途中 2 回「DONE」宣言したが誤判断と認識。R4d Step 3 のブレークスルー後、本 repo で Round 5 以降を継続する方針に訂正。§11-§13 は追補、詳細は個別 findings 参照。
 
 ---
 
@@ -342,7 +342,7 @@ R4d Step 2: Multi-signal AND filter          → FAIL (filter death)
 R4d Step 3: Multi-signal continuous sizing   → PARTIAL POSITIVE ★★
 ```
 
-### 最終 learning（本 repo の決定版）
+### 中間 learning（Round 5 以降の起点）
 
 > **予測ではなく、複数の独立な regime signal を continuous に組合せることで、初めて OOS で崩れない戦略が得られる。ただし BH を超えるには追加の情報源か非対称 payoff が必要。**
 
@@ -350,14 +350,17 @@ R4d Step 3: Multi-signal continuous sizing   → PARTIAL POSITIVE ★★
 - **continuous sizing × multi-signal は過学習に頑健** (drop 29.3% が証拠)
 - BH 超えには funding rate、Glassnode 有料指標、short allocation 等の追加要素が必要
 
-### 本 repo 最終クローズ（3 度目、真の最終）
+### 本 repo の今後 — Round 5 以降へ継続
 
-- Round 4d Step 3 の engine (`continuous-sizing-engine.ts`) は**そのまま運用可能**
-- 本 repo は「6 ラウンドの negative result + 2 ラウンドの positive (R4c partial, R4d-S3 structural breakthrough)」の**完全 research archive**
-- 次プロジェクトの土台として:
-  - Step 3 engine + funding rate 追加で Sharpe ≥ 1.0 を狙う
-  - 低頻度実運用で本番検証
-  - Glassnode 有料 tier で signal 強化
+- Round 4d Step 3 の engine (`continuous-sizing-engine.ts`) は**そのまま運用可能**な土台
+- 本 repo は「6 ラウンドの negative result + 2 ラウンドの positive (R4c partial, R4d-S3 structural breakthrough)」の積み上げで、**研究継続の最良ベースライン**
+- 先行する §11 (Round 4c 後) / 280 行付近 (§12) の「DONE 宣言」は**早まった判断**。R4d Step 3 のブレークスルーを受けて撤回、本 repo で継続する
+
+**Round 5 の優先候補:**
+- Step 3 engine + funding rate 追加で Sharpe ≥ 1.0 を狙う（第一候補、既存インフラ流用）
+- Kalman Filter で signal weight を動的に調整
+- Glassnode 有料 tier で signal 強化（課金判断は後段で）
+- 検証が進んだら低頻度実運用で本番検証
 
 ### 成果物追加（Round 4d 分）
 
