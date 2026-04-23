@@ -1,8 +1,11 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**結論:** **完全 FAIL**。単純な技術的戦略は crypto でも機能しないことが確定。
+**最終ステータス:** **DONE（プロジェクトクローズ）** ← Round 4b 完了後に宣言
+**結論:** 5 ラウンド（FX Round 1/2 + crypto Round 3/4a/4b）で **価格データのみに基づく単純モデルはエッジを生まない**ことが確定。
 **データ:** BTC-USD 3,652 bars（10年）、ETH-USD 3,087 bars（約8.5年）。yfinance 経由、日足、UTC。
+
+> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3（単銘柄技術戦略）の findings として作成された。その後 Round 4a（SMA50 トレンドフィルタ）と Round 4b（BTC-ETH ペアトレード）を実施、いずれも FAIL。§11 に追補を記載してプロジェクトをクローズする。個別の詳細は `round-4a-findings.md` / `round-4b-findings.md` を参照。
 
 ---
 
@@ -169,3 +172,74 @@ Round 3: crypto 日足 × 4戦略 × BTC/ETH → FAIL (0/8, 全戦略で IS→OO
 - Sharpe 年化係数を √365（crypto 24/7）に変更。FX Round 1/2 との直接数値比較はせず、「閾値到達可否」で判定
 - WF 窓は暦日ベースに再定義（IS 365 / OOS 182 / step 182）して「12ヶ月 / 6ヶ月 / 6ヶ月」の時間構造を維持
 - 実装所要時間: 当初見積 10-17h 対し実測は **本セッション内で完走**（主要コードは既存 FX 実装のパターン流用が効いた）
+
+---
+
+## 11. 追補 — Round 4a / 4b / プロジェクトクローズ
+
+Round 3 の negative result を受けて、§8 で挙げた 5 方向のうち最小コストな 2 つを追加検証。
+
+### Round 4a — SMA50 トレンドフィルタ
+**仮説 H1:** Round 3 失敗の主因はカウンタートレンド取引の累積損失。SMA でフィルタすれば救済できる
+**結果:** **却下**。8 組合せで SAVED 0 / IMPROVED 0 / NO EFFECT 7 / WORSE 1
+**観察:**
+- Max DD は全般に低下（リスク管理効果あり）
+- しかし Sharpe は横ばい or 悪化 → リスク調整後パフォーマンスは不変
+- IS→OOS Sharpe drop は 40-118% で相変わらず大きく、**過学習の根本は手つかず**
+- 詳細: [round-4a-findings.md](round-4a-findings.md)
+
+### Round 4b — BTC-ETH ペアトレード (z-score mean-reversion)
+**仮説 H2:** BTC と ETH は高相関ペア。log(BTC/ETH) の z-score は短中期で平均回帰する
+**結果:** **却下（最悪）**。単独 backtest で Total Return -93.5%、WF OOS Sharpe -0.693、IS→OOS drop **178.7%**
+**観察:**
+- BTC-ETH ratio は **体制変化 (ETH→BTC dominance shifts)** で non-stationary
+- IS で機能した params が OOS で完全崩壊 → 単純 mean-reversion は適用不可
+- 単銘柄戦略より**悪化**
+- 詳細: [round-4b-findings.md](round-4b-findings.md)
+
+### 5 ラウンド累積結果
+
+```
+Round 1 : FX 日足 × 4 戦略 × 3 ペア                     → FAIL (0/12)
+Round 2 : FX 4h × MA Crossover × USDJPY                → FAIL (Sharpe 0.118)
+Round 3 : crypto 日足 × 4 戦略 × BTC/ETH              → FAIL (0/8)
+Round 4a: Round 3 + SMA50 トレンドフィルタ              → FAIL (0/8)
+Round 4b: BTC-ETH ペアトレード z-score mean-revert      → FAIL (最悪)
+```
+
+### プロジェクトクローズの判断
+
+**DONE 宣言 (2026-04-23)**: 本 repo での検証は完了。以下 3 点が累積証拠:
+
+1. **5 回の独立な設計**（市場 FX/crypto、時間軸 日足/4h、戦略クラス trend/reversion/pair）が全て OOS で崩れる
+2. **3 つの異なる仮説**（単独技術戦略 / トレンドフィルタ / 統計的裁定）が全て却下
+3. **IS→OOS の乖離が一貫**（48-178%）→ IS でのパラメータ最適化自体が信頼できない = 過学習が普遍的
+
+**一方で得られた Positive な副産物:**
+- **Buy & Hold が BTC で Sharpe 1.1** → 単純保有が全アクティブ戦略を凌駕した事実
+- **WF + Sharpe drop 判定**フレームワーク自体は堅牢に動作（偽陽性を確実に排除）
+- **コードベース**は他プロジェクトでの価格データ分析に再利用可能
+
+### 次プロジェクトへの示唆（本 repo では実施しない）
+
+本 repo の 5 ラウンド結果は、次に取り組むなら以下の方向性を示唆:
+
+- **情報源を変える（価格 → オンチェーン / マクロ）**: この 5 ラウンドは全て価格系列のみ。情報が足りない可能性
+- **時間軸を変える（日足 → 時間足 / 秒足）**: HFT / マイクロストラクチャには別種のエッジがある（実装難度は桁違い）
+- **戦略構造を変える（predictive → execution-based）**: MM、arbitrage、funding harvesting など「予測しない」戦略
+- **passive に徹する**: BTC BH が Sharpe 1.1 → 「ただ保有する」が統計的に優位
+
+これらは別 repo での新プロジェクトとして取り組む価値がある。本 repo は**参照実装 + negative result のアーカイブ**として固定する。
+
+### 成果物追加（Round 4a / 4b 分）
+
+- コード追加:
+  - `src/lib/trend-filter.ts` / `spread.ts`
+  - `src/core/wrapped/*-tf.ts` × 4
+  - `src/backtest/pair-engine.ts` / `pair-trade-run.ts`
+  - `src/walk-forward/pair-engine.ts`
+  - scripts: 5 本追加
+- テスト: 30 件追加、**全 158 件グリーン**
+- レポート追加: Round 4a × 8、Round 4b × 1
+- DB: `WalkForwardRun` 9 row 追加（`*-tf` × 8 + `pair-trade` × 1）
+- 本セッション合計工数: 設計 + 実装 + 実行 + レポート = 約 4h
