@@ -74,6 +74,27 @@ model LivePositionLog {
   @@index([asset, date])
 }
 
+model VirtualPortfolioState {
+  id               String   @id @default(cuid())
+  asset            String
+  date             DateTime
+  price            Float
+  targetPosition   Float
+  actualPosition   Float
+  cashUsd          Float
+  units            Float
+  equityUsd        Float
+  rebalancedToday  Boolean
+  rebalanceDelta   Float
+  feeUsd           Float
+  cumulativeReturn Float
+  cumulativeFee    Float
+  createdAt        DateTime @default(now())
+
+  @@unique([asset, date])
+  @@index([asset, date])
+}
+
 model DailyBar {
   id      String   @id @default(cuid())
   assetId String

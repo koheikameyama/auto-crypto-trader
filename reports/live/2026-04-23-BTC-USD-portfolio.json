@@ -1,0 +1,31 @@
+{
+  "date": "2026-04-23",
+  "asset": "BTC-USD",
+  "price": 78203.1015625,
+  "signal": {
+    "dxyValue": 98.58999633789062,
+    "dxyScore": 0.4875153937961415,
+    "fundingValue": -0.000057115,
+    "fundingScore": 0.9671232876712329,
+    "targetPosition": 0.6793585513461781
+  },
+  "portfolio": {
+    "cashUsd": 3206.4144865382195,
+    "units": 0.08678426531872291,
+    "equityUsd": 9993.213201285253,
+    "actualPosition": 0.6791407906592213,
+    "rebalancedToday": true,
+    "rebalanceDelta": 0.08678426531872291,
+    "feeUsd": 6.78679871474651
+  },
+  "cumulative": {
+    "return": -0.0006786798714747419,
+    "fee": 6.78679871474651
+  },
+  "config": {
+    "wDxy": 0.6,
+    "wFunding": 0.4,
+    "rebalanceThreshold": 0.1,
+    "initialCapital": 10000
+  }
+}

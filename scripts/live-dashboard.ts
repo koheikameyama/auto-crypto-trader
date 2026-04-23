@@ -28,10 +28,69 @@ function posBar(position: number, width = 20): string {
   return "[" + "█".repeat(filled) + "·".repeat(width - filled) + "]";
 }
 
+async function renderPortfolioView(prisma: PrismaClient, asset: string, days: number): Promise<boolean> {
+  const since = dayjs().subtract(days, "day").toDate();
+  const rows = await prisma.virtualPortfolioState.findMany({
+    where: { asset, date: { gte: since } },
+    orderBy: { date: "asc" },
+  });
+  if (rows.length === 0) return false;
+
+  console.log(`\n=== Virtual Portfolio (${asset}, last ${days} days) ===\n`);
+  console.log(
+    `| Date       | Price   | Target | Actual | Equity    | CumRet  | DD    | Fee(day) | Reb |`,
+  );
+  console.log(
+    `|------------|---------|--------|--------|-----------|---------|-------|----------|-----|`,
+  );
+  let peakEquity = 0;
+  for (const r of rows) {
+    const d = dayjs(r.date).format("YYYY-MM-DD");
+    const price = r.price.toFixed(2).padStart(7);
+    const target = `${(r.targetPosition * 100).toFixed(1)}%`.padStart(6);
+    const actual = `${(r.actualPosition * 100).toFixed(1)}%`.padStart(6);
+    const equity = r.equityUsd.toFixed(2).padStart(9);
+    const cumRet = `${r.cumulativeReturn >= 0 ? "+" : ""}${(r.cumulativeReturn * 100).toFixed(2)}%`.padStart(7);
+    if (r.equityUsd > peakEquity) peakEquity = r.equityUsd;
+    const dd = peakEquity > 0 ? (peakEquity - r.equityUsd) / peakEquity : 0;
+    const ddStr = `${(dd * 100).toFixed(1)}%`.padStart(5);
+    const fee = `$${r.feeUsd.toFixed(2)}`.padStart(8);
+    const reb = r.rebalancedToday ? "★" : "·";
+    console.log(
+      `| ${d} | ${price} | ${target} | ${actual} | ${equity} | ${cumRet} | ${ddStr} | ${fee} | ${reb.padStart(3)} |`,
+    );
+  }
+
+  const last = rows[rows.length - 1];
+  const first = rows[0];
+  const maxDD = rows.reduce((m, r) => {
+    const peakToHere = rows.slice(0, rows.indexOf(r) + 1).reduce((p, x) => Math.max(p, x.equityUsd), 0);
+    const dd = peakToHere > 0 ? (peakToHere - r.equityUsd) / peakToHere : 0;
+    return Math.max(m, dd);
+  }, 0);
+  const rebCount = rows.filter((r) => r.rebalancedToday).length;
+
+  console.log(`\n=== Summary ===`);
+  console.log(`Period:    ${dayjs(first.date).format("YYYY-MM-DD")} → ${dayjs(last.date).format("YYYY-MM-DD")} (${rows.length} days)`);
+  console.log(`Initial:   ~$${(last.equityUsd / (1 + last.cumulativeReturn)).toFixed(2)}`);
+  console.log(`Current:   $${last.equityUsd.toFixed(2)}`);
+  console.log(`Return:    ${last.cumulativeReturn >= 0 ? "+" : ""}${(last.cumulativeReturn * 100).toFixed(2)}%`);
+  console.log(`Max DD:    ${(maxDD * 100).toFixed(2)}%`);
+  console.log(`Total fee: $${last.cumulativeFee.toFixed(2)}`);
+  console.log(`Rebalances:${rebCount}`);
+  console.log(`Target:    ${(last.targetPosition * 100).toFixed(1)}% long ${asset}`);
+  return true;
+}
+
 async function main() {
   const { asset, days } = parseArgs();
   const prisma = new PrismaClient();
   try {
+    // Try virtual portfolio first (has richer data)
+    const hasPortfolio = await renderPortfolioView(prisma, asset, days);
+    if (hasPortfolio) return;
+
+    // Fallback: LivePositionLog (signal-only view)
     const since = dayjs().subtract(days, "day").toDate();
     const rows = await prisma.livePositionLog.findMany({
       where: { asset, date: { gte: since } },
