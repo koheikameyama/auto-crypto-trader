@@ -8,12 +8,27 @@ datasource db {
 }
 
 model Asset {
-  id             String     @id @default(cuid())
-  symbol         String     @unique
-  yfinanceTicker String     @unique
+  id             String          @id @default(cuid())
+  symbol         String          @unique
+  yfinanceTicker String          @unique
   feeRate        Float
   dailyBars      DailyBar[]
   trades         Trade[]
+  onchainMetrics OnchainMetric[]
+}
+
+model OnchainMetric {
+  id         String   @id @default(cuid())
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
+  date       DateTime
+  priceUsd   Float
+  capMrktUsd Float
+  txCnt      Int
+  adrActCnt  Int
+
+  @@unique([assetId, date])
+  @@index([assetId, date])
 }
 
 model DailyBar {

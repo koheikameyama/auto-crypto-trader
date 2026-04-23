@@ -16,6 +16,10 @@ from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
+import urllib.request
+import urllib.parse
+import json
+
 import uvicorn
 import yfinance as yf
 from curl_cffi.requests import Session as CurlSession
@@ -306,6 +310,92 @@ async def crypto_daily(ticker: str, start: str, end: str):
     except Exception as e:
         logger.error(f"Failed to fetch crypto/daily for {ticker}: {e}")
         raise HTTPException(status_code=_error_status(e), detail=_error_detail(e))
+
+
+# ========================================
+# オンチェーン指標 (CoinMetrics Community API)
+# ========================================
+
+_COINMETRICS_BASE = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+_COINMETRICS_FREE_METRICS = "PriceUSD,CapMrktCurUSD,TxCnt,AdrActCnt"
+_COINMETRICS_PAGE_LIMIT = 10000
+
+
+def _fetch_coinmetrics_page(
+    asset: str, metrics: str, start: str, end: str, next_page_token: str | None
+) -> dict:
+    params = {
+        "assets": asset,
+        "metrics": metrics,
+        "start_time": start,
+        "end_time": end,
+        "frequency": "1d",
+        "page_size": str(_COINMETRICS_PAGE_LIMIT),
+    }
+    if next_page_token:
+        params["next_page_token"] = next_page_token
+    url = f"{_COINMETRICS_BASE}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "auto-crypto-trader/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
+
+
+@app.get("/onchain/daily")
+async def onchain_daily(asset: str, start: str, end: str):
+    """
+    CoinMetrics Community API から BTC のオンチェーン指標を取得する。
+
+    無料 tier のみ利用: PriceUSD / CapMrktCurUSD / TxCnt / AdrActCnt
+    asset: 'btc' のみサポート（Round 4c スコープ）
+    start, end: 'YYYY-MM-DD'
+    """
+    asset_lc = asset.lower()
+    if asset_lc != "btc":
+        raise HTTPException(
+            status_code=400, detail=f"Only 'btc' is supported in free tier, got '{asset}'"
+        )
+
+    try:
+        all_rows: list[dict] = []
+        next_token: str | None = None
+        while True:
+            body = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: _fetch_coinmetrics_page(
+                    asset_lc, _COINMETRICS_FREE_METRICS, start, end, next_token
+                ),
+            )
+            rows = body.get("data", [])
+            all_rows.extend(rows)
+            next_token = body.get("next_page_token")
+            if not next_token:
+                break
+
+        parsed: list[dict] = []
+        for r in all_rows:
+            ts = r.get("time", "")
+            date_str = ts.split("T")[0] if "T" in ts else ts
+            price = safe_float_or_none(r.get("PriceUSD"))
+            cap = safe_float_or_none(r.get("CapMrktCurUSD"))
+            tx = safe_float_or_none(r.get("TxCnt"))
+            adr = safe_float_or_none(r.get("AdrActCnt"))
+            if price is None or cap is None or tx is None or adr is None:
+                continue
+            parsed.append({
+                "date": date_str,
+                "priceUsd": price,
+                "capMrktUsd": cap,
+                "txCnt": int(tx),
+                "adrActCnt": int(adr),
+            })
+
+        return {"asset": asset_lc, "bars": parsed}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch onchain/daily for {asset}: {e}")
+        raise HTTPException(status_code=500, detail=str(e) or type(e).__name__)
 
 
 # ========================================

@@ -1,11 +1,11 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**最終ステータス:** **DONE（プロジェクトクローズ）** ← Round 4b 完了後に宣言
-**結論:** 5 ラウンド（FX Round 1/2 + crypto Round 3/4a/4b）で **価格データのみに基づく単純モデルはエッジを生まない**ことが確定。
-**データ:** BTC-USD 3,652 bars（10年）、ETH-USD 3,087 bars（約8.5年）。yfinance 経由、日足、UTC。
+**最終ステータス:** **DONE（プロジェクトクローズ）** ← Round 4c 完了後に最終確定
+**結論:** 6 ラウンド（FX Round 1/2 + crypto Round 3/4a/4b/4c）で **予測ベースの単純戦略は主KPI を達成できない**ことが確定。ただし Round 4c で「DD 削減型の部分 positive」を発見。
+**データ:** BTC-USD 3,652 bars（10年）、ETH-USD 3,087 bars（約8.5年）、BTC オンチェーン指標 3,652 rows（CoinMetrics Community）。
 
-> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3（単銘柄技術戦略）の findings として作成された。その後 Round 4a（SMA50 トレンドフィルタ）と Round 4b（BTC-ETH ペアトレード）を実施、いずれも FAIL。§11 に追補を記載してプロジェクトをクローズする。個別の詳細は `round-4a-findings.md` / `round-4b-findings.md` を参照。
+> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3（単銘柄技術戦略）の findings として作成された。その後 Round 4a（SMA50 トレンドフィルタ）、Round 4b（BTC-ETH ペアトレード）、Round 4c（オンチェーン regime filter）を追加実施。§11 / §12 に追補を記載して最終クローズ。個別の詳細は `round-4a-findings.md` / `round-4b-findings.md` / `round-4c-findings.md` を参照。
 
 ---
 
@@ -243,3 +243,66 @@ Round 4b: BTC-ETH ペアトレード z-score mean-revert      → FAIL (最悪)
 - レポート追加: Round 4a × 8、Round 4b × 1
 - DB: `WalkForwardRun` 9 row 追加（`*-tf` × 8 + `pair-trade` × 1）
 - 本セッション合計工数: 設計 + 実装 + 実行 + レポート = 約 4h
+
+---
+
+## 12. 追補 — Round 4c (最終ラウンド)
+
+「DONE 宣言」の後、ユーザー要望で Round 4c（オンチェーン regime filter）を追加実施。
+
+### Round 4c — BTC オンチェーン指標レジームフィルタ
+**仮説 H3:** NVT proxy + Active Address momentum で bear regime を検知し cash に退避すれば Sharpe 改善 & DD 削減できる
+**データ:** CoinMetrics Community API 無料 tier（`PriceUSD`, `CapMrktCurUSD`, `TxCnt`, `AdrActCnt`）。MVRV / NVT classical は有料で取得不可 → 代替 proxy で実装
+**戦略:** `nvtProxy = CapMrkt / TxCnt`（14日 MA）と `AdrActCnt / MA(30)` の組合せで binary long/cash 切替
+**結果:**
+- OOS Sharpe avg: **0.684** (閾値 1.0 未達、BH 1.102 未達 → 技術判定 FAIL)
+- OOS MAR avg: **4.871** (BH 0.806 の **6x** → 部分 positive)
+- OOS Max DD: **42.73%** (BH 83.40% の **約半分** → 部分 positive)
+- IS→OOS drop: 49.3% (閾値 30% 超)
+
+**観察:** Round 4a/4b と違い、**DD 削減は実用的に有意**。Sharpe では BH 負けるが MAR では大勝。
+「アクティブ運用はしない、ただし極端 bear では cash 退避」という **Risk-managed BH** としては価値あり。
+詳細: [round-4c-findings.md](round-4c-findings.md)
+
+### 6 ラウンド最終累積
+
+```
+Round 1 : FX 日足 × 4 戦略 × 3 ペア              → FAIL (0/12)
+Round 2 : FX 4h × MA Crossover                   → FAIL
+Round 3 : crypto 日足 × 4 戦略                    → FAIL (0/8)
+Round 4a: Round 3 + SMA50 フィルタ                → FAIL (0/8, 変化なし)
+Round 4b: BTC-ETH pair trade z-score             → FAIL (最悪)
+Round 4c: BTC オンチェーン regime filter          → FAIL (部分 positive: DD 半減)
+```
+
+### 最終クローズ宣言
+
+本 repo を**正式 DONE として固定**する（2 度目、今度こそ最終）。
+
+**最終的な learning:**
+1. **予測ベースの単純戦略は一貫して OOS 過学習** (6 ラウンド共通)
+2. **BTC Buy & Hold (Sharpe 1.1) が最強のベンチマーク**
+3. **情報源を変えても根本は変わらない** (価格 / SMA / spread / onchain proxy すべて同じ結果パターン)
+4. **DD 削減は可能だが Sharpe 犠牲** (Round 4c で唯一確認)
+5. **Round 4c の Risk-managed BH パターンは実用観点で別途価値がある** (ただし本 repo の research 問題設定では FAIL)
+
+### 次プロジェクトへの最終示唆
+
+- **Risk-managed BH の variant**: Round 4c を出発点に、Glassnode / DXY / VIX 等を組合せる新プロジェクト
+- **Execution-based**: 予測せず構造的 edge を捕捉（funding arb、basis trade、MEV）。別 repo 推奨
+- **Passive**: BH の簡潔な統計的優位を素直に受け入れる
+- **HFT**: 個人開発の期待値は低い、インフラ戦争になる
+
+### 成果物追加（Round 4c 分）
+
+- コード追加:
+  - `yfinance-service/main.py`: `/onchain/daily` エンドポイント（CoinMetrics proxy）
+  - `prisma/schema.prisma` + migration: `OnchainMetric` モデル
+  - `src/data/onchain-loader.ts`
+  - `src/lib/onchain-indicators.ts` + tests
+  - `src/backtest/regime-engine.ts` + tests
+  - `src/walk-forward/regime-engine.ts`
+  - `scripts/backfill-onchain-metrics.ts`、`scripts/walk-forward-onchain-regime.ts`
+- テスト: 12 件追加、**全 170 件グリーン**
+- DB: `OnchainMetric` 3,652 rows 追加、`WalkForwardRun` 1 row
+- レポート追加: Round 4c × 1
