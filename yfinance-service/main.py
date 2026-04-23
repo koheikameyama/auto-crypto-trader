@@ -312,6 +312,30 @@ async def crypto_daily(ticker: str, start: str, end: str):
         raise HTTPException(status_code=_error_status(e), detail=_error_detail(e))
 
 
+@app.get("/macro/daily")
+async def macro_daily(ticker: str, start: str, end: str):
+    """
+    マクロ指標の日足データを取得する (DXY, VIX, gold, etc. 何でも yfinance 経由)。
+
+    ticker: yfinance generic ticker (e.g. 'DX-Y.NYB', '^VIX', 'GC=F')
+    start, end: 'YYYY-MM-DD'
+
+    US 営業日のみ。週末・祝日は bar なし。caller 側で forward-fill 処理する。
+    """
+    try:
+        def _fetch(session: CurlSession):
+            t = yf.Ticker(ticker, session=session)
+            df = t.history(start=start, end=end, interval="1d", auto_adjust=False)
+            return df
+
+        df = await throttled_with_retry(_fetch)
+        bars = _df_to_bars(df, require_positive_close=False)
+        return {"ticker": ticker, "bars": bars}
+    except Exception as e:
+        logger.error(f"Failed to fetch macro/daily for {ticker}: {e}")
+        raise HTTPException(status_code=_error_status(e), detail=_error_detail(e))
+
+
 # ========================================
 # オンチェーン指標 (CoinMetrics Community API)
 # ========================================

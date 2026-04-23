@@ -1,11 +1,11 @@
 # Auto Crypto Trader — Research Findings
 
 **実験実施日:** 2026-04-23
-**最終ステータス:** **DONE（プロジェクトクローズ）** ← Round 4c 完了後に最終確定
-**結論:** 6 ラウンド（FX Round 1/2 + crypto Round 3/4a/4b/4c）で **予測ベースの単純戦略は主KPI を達成できない**ことが確定。ただし Round 4c で「DD 削減型の部分 positive」を発見。
-**データ:** BTC-USD 3,652 bars（10年）、ETH-USD 3,087 bars（約8.5年）、BTC オンチェーン指標 3,652 rows（CoinMetrics Community）。
+**最終ステータス:** **DONE（プロジェクト完全クローズ、3 度目の最終）** ← Round 4d 完了後に真の最終確定
+**結論:** 8 ラウンド（FX R1/2 + crypto R3/4a/4b/4c/4d-Step1/Step2/Step3）で **予測ベース戦略は全滅、ただし Round 4d Step 3 で初めて過学習を構造的に突破**（IS→OOS drop 29.3%、Sharpe 0.903）。
+**データ:** BTC-USD 10年、ETH-USD 8.5年、BTC オンチェーン指標（CoinMetrics Community）、DXY/VIX 10年（yfinance）。
 
-> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3（単銘柄技術戦略）の findings として作成された。その後 Round 4a（SMA50 トレンドフィルタ）、Round 4b（BTC-ETH ペアトレード）、Round 4c（オンチェーン regime filter）を追加実施。§11 / §12 に追補を記載して最終クローズ。個別の詳細は `round-4a-findings.md` / `round-4b-findings.md` / `round-4c-findings.md` を参照。
+> **追記 (2026-04-23):** 本ドキュメントは当初 Round 3 の findings として作成。その後 R4a/4b/4c/4d を追加実施。**Round 4d Step 3 が本 repo の最終的な positive**（マルチ signal continuous sizing）。§11-§13 に追補、詳細は個別 findings 参照。
 
 ---
 
@@ -306,3 +306,66 @@ Round 4c: BTC オンチェーン regime filter          → FAIL (部分 positiv
 - テスト: 12 件追加、**全 170 件グリーン**
 - DB: `OnchainMetric` 3,652 rows 追加、`WalkForwardRun` 1 row
 - レポート追加: Round 4c × 1
+
+---
+
+## 13. 追補 — Round 4d (真の最終ラウンド)
+
+Round 4c の partial positive を発展させるため、3-step progression で Risk-Managed BH を検証。
+
+### Step 1 — Trailing Stop BH (No-Go)
+純粋価格ベースの trailing stop。R4c より劣後 (Sharpe 0.655, DD 60%) → **外部 signal が必要と判明**
+
+### Step 2 — Multi-Signal AND Filter (No-Go, "Filter Death")
+Onchain + DXY + VIX を AND で組合せ。**過剰制限で Sharpe 負、drop 104%**。教訓: 多 signal を hard filter すると逆効果
+
+### Step 3 — Multi-Signal Continuous Sizing ★ PARTIAL POSITIVE
+同じ 3 signal を **soft weighted average で position size 0-100%** に連続化。結果:
+- **OOS Sharpe: 0.903** (BH 1.102 の 82%、R4c 0.684 から +32%)
+- **IS→OOS drop: 29.3%** (8 ラウンドで**初の閾値 30% 未満** ← 過学習の構造的突破)
+- OOS Max DD: 47.91% (BH 83% の 57%)
+- OOS MAR: 5.448 (BH 0.806 の 6.8x)
+
+**本 repo の 8 ラウンドで最も promising な結果。** 「複数の独立 signal を連続的に組合せる」という approach が**構造的に過学習を抑える**ことが実証された。詳細: [round-4d-findings.md](round-4d-findings.md)
+
+### 8 ラウンド最終累積
+
+```
+R1 : FX 日足 × 4 戦略 × 3 ペア               → FAIL (0/12)
+R2 : FX 4h × MA Crossover                    → FAIL
+R3 : crypto 日足 × 4 戦略                     → FAIL (0/8)
+R4a: R3 + SMA50 フィルタ                      → FAIL (0/8)
+R4b: BTC-ETH pair trade z-score              → FAIL (最悪)
+R4c: BTC onchain regime binary               → FAIL (DD 半減の partial positive)
+R4d Step 1: Trailing Stop BH                 → FAIL
+R4d Step 2: Multi-signal AND filter          → FAIL (filter death)
+R4d Step 3: Multi-signal continuous sizing   → PARTIAL POSITIVE ★★
+```
+
+### 最終 learning（本 repo の決定版）
+
+> **予測ではなく、複数の独立な regime signal を continuous に組合せることで、初めて OOS で崩れない戦略が得られる。ただし BH を超えるには追加の情報源か非対称 payoff が必要。**
+
+- 8 ラウンドすべての「予測・単一 signal・hard filter」は過学習で失敗
+- **continuous sizing × multi-signal は過学習に頑健** (drop 29.3% が証拠)
+- BH 超えには funding rate、Glassnode 有料指標、short allocation 等の追加要素が必要
+
+### 本 repo 最終クローズ（3 度目、真の最終）
+
+- Round 4d Step 3 の engine (`continuous-sizing-engine.ts`) は**そのまま運用可能**
+- 本 repo は「6 ラウンドの negative result + 2 ラウンドの positive (R4c partial, R4d-S3 structural breakthrough)」の**完全 research archive**
+- 次プロジェクトの土台として:
+  - Step 3 engine + funding rate 追加で Sharpe ≥ 1.0 を狙う
+  - 低頻度実運用で本番検証
+  - Glassnode 有料 tier で signal 強化
+
+### 成果物追加（Round 4d 分）
+
+- コード (9 files):
+  - Step 1: `src/backtest/trailing-stop-bh-engine.ts`、`src/walk-forward/trailing-stop-bh-engine.ts`、`scripts/walk-forward-trailing-stop-bh.ts`
+  - Step 2: `yfinance-service/main.py` (/macro/daily)、`prisma/schema.prisma` (MacroBar migration)、`src/data/macro-loader.ts`、`scripts/backfill-macro.ts`、`src/backtest/multi-signal-regime-engine.ts`、`src/walk-forward/multi-signal-regime-engine.ts`、`scripts/walk-forward-multi-signal.ts`
+  - Step 3: `src/backtest/continuous-sizing-engine.ts`、`scripts/walk-forward-continuous-sizing.ts`
+- テスト: 6 件追加、**全 176 件グリーン**
+- DB: `MacroBar` 5,026 rows (DXY 2,513 + VIX 2,513)、`WalkForwardRun` 3 rows
+- レポート: Round 4d の WF md 3 本 + [round-4d-findings.md](round-4d-findings.md)
+- 実績工数: 約 2.5h

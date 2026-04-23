@@ -31,6 +31,20 @@ model OnchainMetric {
   @@index([assetId, date])
 }
 
+model MacroBar {
+  id     String   @id @default(cuid())
+  ticker String
+  date   DateTime
+  open   Float
+  high   Float
+  low    Float
+  close  Float
+  volume Float?
+
+  @@unique([ticker, date])
+  @@index([ticker, date])
+}
+
 model DailyBar {
   id      String   @id @default(cuid())
   assetId String
