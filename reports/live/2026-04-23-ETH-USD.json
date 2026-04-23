@@ -1,0 +1,23 @@
+{
+  "date": "2026-04-23",
+  "asset": "ETH-USD",
+  "dxy": {
+    "value": 98.58999633789062,
+    "sma200": 98.51620018005372,
+    "score": 0.4875153937961415
+  },
+  "funding": {
+    "symbol": "ETHUSDT",
+    "value": 0.00004008,
+    "percentile365": 0.5397260273972603,
+    "score": 0.4602739726027397
+  },
+  "weights": {
+    "wDxy": 0.6,
+    "wFunding": 0.4
+  },
+  "targetPosition": 0.47661882531878075,
+  "previousPosition": null,
+  "rebalanceThreshold": 0.1,
+  "rebalanceNeeded": true
+}

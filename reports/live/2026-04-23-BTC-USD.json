@@ -1,0 +1,23 @@
+{
+  "date": "2026-04-23",
+  "asset": "BTC-USD",
+  "dxy": {
+    "value": 98.58999633789062,
+    "sma200": 98.51620018005372,
+    "score": 0.4875153937961415
+  },
+  "funding": {
+    "symbol": "BTCUSDT",
+    "value": -0.000057115,
+    "percentile365": 0.03287671232876712,
+    "score": 0.9671232876712329
+  },
+  "weights": {
+    "wDxy": 0.6,
+    "wFunding": 0.4
+  },
+  "targetPosition": 0.6793585513461781,
+  "previousPosition": null,
+  "rebalanceThreshold": 0.1,
+  "rebalanceNeeded": true
+}

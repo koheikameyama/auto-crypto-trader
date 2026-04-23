@@ -56,6 +56,24 @@ model MacroBar {
   @@index([ticker, date])
 }
 
+model LivePositionLog {
+  id               String   @id @default(cuid())
+  asset            String
+  date             DateTime
+  dxyValue         Float
+  dxyScore         Float
+  fundingValue     Float
+  fundingScore     Float
+  targetPosition   Float
+  previousPosition Float?
+  rebalanceFlag    Boolean
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@unique([asset, date])
+  @@index([asset, date])
+}
+
 model DailyBar {
   id      String   @id @default(cuid())
   assetId String
