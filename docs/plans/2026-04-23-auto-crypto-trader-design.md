@@ -111,13 +111,14 @@ WF で shortEma/entryPeriod 等を最適化。
 - **手数料**: エントリー/エグジットで各 0.10% を不利側に反映
   - ロング: エントリー時 `entryPrice × 1.001`, エグジット時 `exitPrice × 0.999`
   - ショート: エントリー時 `entryPrice × 0.999`, エグジット時 `exitPrice × 1.001`
-- **資金調達率**: 0（無視、MVP原則）
-- **スリッページ**: 0（BTC/ETH 流動性前提）
+- **資金調達率**: **MVP 本体では 0**。ただし感度分析として定数 funding（年率 **5% / 10%**、ロングに不利・ショートに有利）を掛けた副次ランを別途実施し、結果が funding に依存するかを確認
+- **スリッページ**: 0（BTC/ETH 日足流動性前提。クラッシュ局面では楽観的な点を考察に記載）
 
 ### 実装
 
 - `applyFee(asset, side, type, rawPrice)` で統一（`type: "entry" | "exit"`）
-- `calcFundingCost` 関数は定義するが常に 0 を返す（将来拡張用）
+- **現行の engine.ts は spread をエントリー時にしか適用していないため、exit 時にも `applyFee` を呼ぶよう追加改造が必要**（無変更流用ではない）
+- `calcFundingCost(asset, side, units, holdingDays, annualFundingRate)` を実装。本体では `annualFundingRate=0`、感度分析では `0.05 / 0.10` を渡す
 - `src/data/asset-config.ts` で feeRate を定数管理
 
 ---
@@ -128,25 +129,37 @@ WF で shortEma/entryPeriod 等を最適化。
 |---|---|
 | 初期資金 | **10,000 USD** |
 | リスク率 | **1%** |
-| 計算式 | `units = (equity × 0.01) / (slPrice × atrMul)` |
+| 計算式 | `units = (equity × riskRatio) / slDistance`<br>ここで `slDistance = ATR × slAtrMultiplier`（USD/unit） |
 | レバレッジ | 1倍想定 |
 | 最小単位 | バックテストでは無視（fractional許容） |
 
-- `pip-value.ts` は不要（USD建て直接計算）
+- `pip-value.ts` は削除（USD建て直接計算）
+- `src/lib/position-sizer.ts` を crypto 向けに書き換え（`slPips + usdJpyRate` → `slDistance (USD)` に変更）
 - `src/types/trade.ts` の `pnlJpy` → `pnlUsd` にリネーム
+- `src/types/trade.ts` の `pnlPips` は **削除**（crypto に pip 概念なし）。代替として `pnlPrice`（生の価格差） は保持しても可
 
 ---
 
 ## 7. Walk-Forward 検証
 
-| 項目 | 値 |
-|---|---|
-| isDays | 252（12ヶ月） |
-| oosDays | 126（6ヶ月） |
-| stepDays | 126（0.5年） |
-| 期待窓数 | 約18（BTC）/ 約14（ETH） |
+crypto は 24/7 市場（365日/年）、FX は営業日ベース（約252日/年）。両者を**同じ日数パラメータ**で回すと「1窓が意味する暦期間」が変わり、純粋な比較にならない。
 
-**FX と完全同条件**で比較可能にする。
+本設計では **暦日ベースに再定義** し、crypto 側の窓サイズを拡張する:
+
+| 項目 | 値（crypto 暦日） | 参考: FX 営業日 |
+|---|---|---|
+| isDays | **365**（12ヶ月） | 252 |
+| oosDays | **182**（6ヶ月） | 126 |
+| stepDays | **182** | 126 |
+| 期待窓数（BTC 10年≈3650バー） | 約 **19** | — |
+| 期待窓数（ETH 8年≈2920バー） | 約 **14** | — |
+
+**FX と揃えるのは「IS=12ヶ月 / OOS=6ヶ月 / step=6ヶ月」という時間構造**であり、バー数ではない。この再定義により「市場特性の差だけを変数にする」という設計思想を維持する。
+
+### Sharpe 年化係数
+
+crypto 日足 = 年 365 バー → **Sharpe = mean(r) / std(r) × √365**（FX の √252 から変更）。
+`src/lib/metrics.ts` の sharpe 関数に `annualizationFactor` 引数を追加し、FX からの流用時に 252 → 365 へ切り替える。
 
 ### パラメータグリッド（FX と同じ）
 
@@ -177,27 +190,37 @@ WF で shortEma/entryPeriod 等を最適化。
 
 ## 9. アーキテクチャ
 
-### auto-fx-trader からコピペで流用（無変更）
+> ⚠️ **流用前提の訂正**: 当初「engine.ts / exit-manager.ts / position-sizer.ts は無変更で流用」としていたが、これらは `PairSymbol` / `pipsToJpy` / `calcSwapJpy` / `usdJpyRate` / `pipSize` など FX 専用ロジックに深く依存しているため**実質的に改造が必要**。以下に再分類する。
 
-- `src/backtest/engine.ts`
-- `src/backtest/exit-manager.ts`
-- `src/backtest/position-sizer.ts`
-- `src/walk-forward/` 配下全部
-- `src/lib/metrics.ts`
-- `src/lib/indicators/` 配下全部
-- `src/core/*/` 全4戦略
+### auto-fx-trader からコピペで流用（ほぼ無変更、型名の import 置換のみ）
 
-### 仮想通貨向けに置き換え
+- `src/lib/indicators/` 配下全部（純粋な数学関数）
+- `src/core/*/params.ts`（戦略のパラメータ定義のみ）
+- `src/walk-forward/optimizer.ts` / `robustness.ts`（ロジックは汎用）
+- `yfinance-service/` 全体（crypto ticker は yfinance が同形式で返す）
+
+### コピペ後に改造が必要（型伝播 + ロジック修正）
+
+| ファイル | 改造内容 |
+|---|---|
+| `src/backtest/engine.ts` | `pipsToJpy` / `calcSwapJpy` / `applySpread` / `resolveUsdJpyRate` を撤去。PnL を `(exit - entry) × units` の USD 直計算に。**exit 時にも `applyFee` を呼ぶ**。`pair: PairSymbol` → `asset: AssetSymbol`。 |
+| `src/backtest/exit-manager.ts` | `PositionState.pair: PairSymbol` → `asset: AssetSymbol` に型リネーム。ロジック自体は価格ベースなので温存。 |
+| `src/backtest/position-sizer.ts` | `slPips` + `usdJpyRate` を撤廃し、`slDistance (USD)` を受け取る形に書き換え。`units = riskUsd / slDistance`。 |
+| `src/backtest/cost-model.ts` | `applySpread` → `applyFee(asset, side, type, rawPrice)`、`calcSwapJpy` → `calcFundingCost(asset, side, units, holdingDays, annualRate)`。 |
+| `src/core/*/index.ts`（4戦略） | `generateSignals(bars, pair, params)` のシグネチャを `asset: AssetSymbol` に変更。 |
+| `src/walk-forward/engine.ts` | `PairSymbol` 参照箇所を `AssetSymbol` に置換。 |
+| `src/lib/metrics.ts` | `sharpeRatio` に `annualizationFactor` 引数追加（crypto は 365、FX は 252）。 |
+
+### 仮想通貨向けに新規追加 / 置き換え
 
 | ファイル | 変更内容 |
 |---|---|
-| `src/types/trade.ts` | `pnlJpy` → `pnlUsd` |
-| `src/types/pair.ts` → `asset.ts` | `PairSymbol` → `AssetSymbol = "BTC-USD" | "ETH-USD"` |
-| `src/data/pair-config.ts` → `asset-config.ts` | BTC/ETH の feeRate=0.001、swap系削除 |
-| `src/backtest/cost-model.ts` | `applySpread` → `applyFee`、`calcSwapJpy` → `calcFundingCost`（常に0） |
+| `src/types/trade.ts` | `pnlJpy` → `pnlUsd`、`pnlPips` → **削除**、`pair` → `asset` |
+| `src/types/pair.ts` → `asset.ts` | `PairSymbol` → `AssetSymbol = "BTC-USD" \| "ETH-USD"` |
+| `src/data/pair-config.ts` → `asset-config.ts` | BTC/ETH の `feeRate=0.001`。`spreadPips` / `buySwapJpy` / `sellSwapJpy` / `pipDecimals` を削除し、`feeRate` のみ持つ |
 | `src/lib/pip-value.ts` | 削除 |
-| `src/data/price-loader.ts` | yfinance の BTC-USD / ETH-USD 取得（構造は同じ） |
-| `src/lib/correlation.ts` | 削除 or BTC/ETHは高相関と扱う（ポートフォリオ運用で考慮） |
+| `src/data/price-loader.ts` | yfinance の `BTC-USD` / `ETH-USD` 取得。エンドポイントは `/crypto/daily` に追加 or `/fx/daily` を汎用化 |
+| `src/lib/correlation.ts` | 削除（BTC/ETH は高相関前提でポートフォリオ段で考察） |
 
 ### 新規追加
 
@@ -251,11 +274,14 @@ model Asset {
 }
 
 model DailyBar {
-  // ほぼ既存のまま、pairId → assetId にリネーム
+  // 既存の DailyBar をコピペ。pairId → assetId にリネーム、
+  // @@unique([pairId, date]) → @@unique([assetId, date]) も忘れず変更。
 }
 
-// BacktestRun / WalkForwardRun はほぼそのまま
-// Trade は pnlJpy → pnlUsd
+// BacktestRun / WalkForwardRun:
+//   pair / pairSymbol 列 → asset / assetSymbol にリネーム
+// Trade:
+//   pnlJpy → pnlUsd、pnlPips を削除、pair → asset
 ```
 
 ---
@@ -309,12 +335,17 @@ model DailyBar {
 
 | フェーズ | 見積 |
 |---|---|
-| プロジェクト scaffold + コピペ | 1-2時間 |
-| 仮想通貨向け型・コスト調整（Asset/feeRate/pnlUsd） | 1時間 |
-| Buy & Hold ヘルパ + Combined | 1時間 |
-| データ取得 + 全バックテスト・WF実行 | 30分（仮想通貨はレートリミットなし想定） |
-| 結果分析 + レポート | 30分 |
-| **合計** | **約4-5時間** |
+| プロジェクト scaffold + yfinance-service コピペ + Prisma 初期化 | 1-2時間 |
+| 型リネーム一斉適用（Pair→Asset, pnlJpy→pnlUsd, pnlPips 削除） + テスト修正 | 2-3時間 |
+| engine.ts / position-sizer.ts / cost-model.ts の crypto 向け書き換え + 単体テスト | 3-4時間 |
+| metrics.ts（√365 対応） + Buy & Hold ヘルパ + Combined runner | 1-2時間 |
+| データ取得 + 個別バックテスト 8組合せ | 30分-1時間 |
+| WF 実行 8組合せ（RSI グリッドが重い: 3×4×4=48param × 19窓） | 1-2時間 |
+| Funding 感度分析ラン（年率 5% / 10%） | 30分 |
+| 結果分析 + レポート | 1-2時間 |
+| **合計** | **約 10-17時間** |
+
+※当初「4-5時間」は engine.ts 等を無変更流用できる前提の見積りだったが、実際は改造が必要なため大幅に拡大。
 
 ---
 
@@ -331,24 +362,26 @@ model DailyBar {
 | KPI DD閾値 | ≤ 20% | ≤ 30%（緩和） |
 | 追加KPI | なし | Buy & Hold 相対比較 |
 | ロバスト性 | 3ペア中2ペア | 2銘柄中1銘柄 |
-| WF窓 | 252/126/126（18窓） | 同じ（18/14窓） |
+| WF窓 | 252/126/126 営業日（18窓） | **365/182/182 暦日**（BTC 19 / ETH 14 窓） |
+| Sharpe 年化係数 | √252 | **√365** |
 | 過学習判定 | IS→OOS ≤ 30% | 同じ |
 
 **フレームワークは共通、市場特性差だけを変数にする**ことで、結果の差を市場に帰結できる純粋実験設計。
+（ただし 24/7 vs 5日/週 の違いから Sharpe 年化係数と WF 窓の暦期間は crypto 側で再定義している。数値そのものの直接比較ではなく「閾値到達可否」で判定する。）
 
 ---
 
 ## 14. 未解決事項（実装時に決定）
 
-- yfinance の BTC-USD / ETH-USD のタイムゾーン処理（UTC想定）
-- BTC の長期データで 2013-2015 年の極端な値動き（100ドル→1000ドル）の扱い
-  - 初期少量期の外れ値を除外するか、素直に含めるか
-  - 推奨: 素直に含める（実際の市場履歴）
-- ETH の取得開始日の確定（yfinance側の仕様次第）
+- yfinance の BTC-USD / ETH-USD のタイムゾーン処理（UTC想定、日足の日付境界に注意）
+- ETH の取得開始日の確定（yfinance の ETH-USD は 2017年11月頃から。8年取得で最大約8年弱）
 - Buy & Hold の計算期間: 各銘柄の全期間 vs. WF OOS 区間だけ
   - 推奨: 両方計算（全期間は参考値、OOS区間はロバスト性比較に使用）
 - Combined ポートフォリオのBTC/ETH配分: 等分 vs リスクパリティ
   - 推奨: 等分（シンプル、MVP原則）
+- クラッシュ局面（3-5%以上のギャップ）でスリッページ0仮定が結果を楽観側に歪める点は考察で明記
+- Sharpe 年化係数変更（252→365）により FX Round 1/2 の数値と**直接比較は不可**。
+  **比較するなら同じ係数で再計算するか、Sharpe ではなく OOS 期待値/PF で比較**する旨をレポートに明記
 
 ---
 
@@ -365,4 +398,4 @@ Round 3: 仮想通貨 日足 × 4戦略 × BTC/ETH ← 本実験
 Round 3 でも失敗なら「単純な技術的戦略はどの市場でも機能しない」という**決定的な結論**が得られる。
 成功なら仮想通貨に本格投資する材料として有効。
 
-いずれにせよ **4-5時間の投資で決着がつく**ため、ROI の高い実験設計。
+いずれにせよ **10-17時間の投資で決着がつく**ため、ROI の高い実験設計。
