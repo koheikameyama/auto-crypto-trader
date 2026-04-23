@@ -66,10 +66,14 @@ export interface WeightedResult {
 }
 
 export interface WeightedInput {
+  /** The crypto asset being traded. Defaults to "BTC-USD". Fee rate comes from asset-config. */
+  asset?: import("../types/asset.js").AssetSymbol;
   btcBars: DailyBar[];
+  /** Onchain bars (BTC only; ETH onchain unused in Scheme E but kept for API compat) */
   onchainBars: OnchainBar[];
   dxyBars: DailyBar[];
   vixBars: DailyBar[];
+  /** Funding rate: BTC uses BTCUSDT perp, ETH uses ETHUSDT perp. */
   fundingBars: FundingBar[];
   tnxBars: DailyBar[];
   params: WeightedParams;
@@ -177,6 +181,7 @@ function empty(): WeightedResult {
 
 export function runWeightedBacktest(input: WeightedInput): WeightedResult {
   const {
+    asset = "BTC-USD",
     btcBars, onchainBars, dxyBars, vixBars, fundingBars, tnxBars,
     params, initialCapital,
   } = input;
@@ -242,7 +247,7 @@ export function runWeightedBacktest(input: WeightedInput): WeightedResult {
       const delta = targetBtcValue - currentBtcValue;
 
       if (delta > 0) {
-        const effPrice = applyFee("BTC-USD", "long", "entry", bar.close);
+        const effPrice = applyFee(asset, "long", "entry", bar.close);
         const unitsToBuy = delta / effPrice;
         btcUnits += unitsToBuy;
         cash -= unitsToBuy * effPrice;
@@ -252,7 +257,7 @@ export function runWeightedBacktest(input: WeightedInput): WeightedResult {
           btcUnitsDelta: unitsToBuy,
         });
       } else {
-        const effPrice = applyFee("BTC-USD", "long", "exit", bar.close);
+        const effPrice = applyFee(asset, "long", "exit", bar.close);
         const unitsToSell = -delta / bar.close;
         const actualUnitsToSell = Math.min(btcUnits, unitsToSell);
         btcUnits -= actualUnitsToSell;
