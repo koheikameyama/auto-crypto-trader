@@ -133,7 +133,8 @@ Round 3 と完全に同じ KPI 表を作成し、**行ごとに救済された�
 
 ### 既知の落とし穴
 
-1. **SMA200 の warm-up**: 各 WF 窓の IS は 365 バーなので 200 バー使うと先頭に null が多い。対策: フィルタは**全期間 bars から SMA 計算** → signals に対して適用（戦略の generateSignals と同じ `bars` を参照）
+1. **SMA200 は OOS 窓で計算不可**（実装後に判明、SMA50 に変更）: engine は IS/OOS 窓ごとに bars を slice して渡す設計で、OOS 窓 182 bars では SMA200 が全 null → シグナル全除外（最初の run で全 Sharpe 0.000 を観測）
+   → **SMA を 50 日に変更**。50 も日次 crypto では十分「中期トレンド」を反映し、OOS 182 bars でも warm-up が 50/182 ≈ 27% に収まる
 2. **BE 判定後の追跡**: フィルタは**エントリー時のみ**。保有中に SMA 割れても exit はしない（既存 exit-manager に任せる）
 3. **SMA200 は「後知恵」か?**: signal.date の時点での SMA 値は、その時点までの close から計算しているので look-ahead bias なし
 4. **テスト片寄り**: SMA200 を過ぎるほど下落した市場（2018年、2022年）では取引数激減の可能性。trade count も観察する

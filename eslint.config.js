@@ -5,7 +5,13 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["node_modules/**", "dist/**", "prisma/migrations/**", "reports/**"],
+    ignores: [
+      "node_modules/**",
+      "dist/**",
+      "prisma/migrations/**",
+      "reports/**",
+      "yfinance-service/**",
+    ],
   },
   {
     files: ["**/*.ts"],
