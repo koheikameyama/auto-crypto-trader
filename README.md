@@ -70,7 +70,7 @@ sudo pmset repeat cancel
 - **DB 初期化**: PostgreSQL + `npx prisma migrate deploy`
 - **backfill**: `scripts/backfill-*.ts` を順に実行
 - **launchd 登録**: `scripts/com.user.auto-crypto-trader.live.plist` を `~/Library/LaunchAgents/` に配置して `launchctl load`
-- **Slack 通知（任意）**: `.env.live.example` → `~/.config/auto-crypto-trader/env` にコピーして `SLACK_WEBHOOK_URL` を設定
+- **Slack 通知（任意）**: repo-root の `.env` に `SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` を追加
 
 ---
 

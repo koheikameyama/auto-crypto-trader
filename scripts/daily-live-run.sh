@@ -8,8 +8,8 @@ set -euo pipefail
 REPO_DIR="/Users/kouheikameyama/development/auto-crypto-trader"
 cd "$REPO_DIR"
 
-# Load optional env config (SLACK_WEBHOOK_URL etc.)
-ENV_FILE="$HOME/.config/auto-crypto-trader/env"
+# Load env config (SLACK_WEBHOOK_URL, DATABASE_URL, etc.) from repo-root .env
+ENV_FILE="$REPO_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1090

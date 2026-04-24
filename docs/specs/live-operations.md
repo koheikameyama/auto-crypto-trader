@@ -147,13 +147,11 @@ daily-live-run.sh は `SLACK_WEBHOOK_URL` が設定されていれば実行終�
    - **Add New Webhook to Workspace** → channel 選択 → Allow
    - 表示された Webhook URL（`https://hooks.slack.com/services/...`）をコピー
 
-2. ローカルで env ファイルを作成
-   ```fish
-   mkdir -p ~/.config/auto-crypto-trader
-   cp .env.live.example ~/.config/auto-crypto-trader/env
-   chmod 600 ~/.config/auto-crypto-trader/env
-   # エディタで開いて SLACK_WEBHOOK_URL=<コピーした URL> を設定
+2. repo-root の `.env` に設定を追加
+   ```bash
+   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
    ```
+   `.env` は `.gitignore` 済みなので commit されない。
 
 3. 動作確認（即座に通知を送信）
    ```fish
@@ -179,7 +177,7 @@ ETH-USD
 • Rebalanced: ✅ (fee $4.76)
 ```
 
-**無効化:** env ファイルから `SLACK_WEBHOOK_URL` を削除 or コメントアウト。daily-live-run.sh は webhook URL が空なら通知 step を skip する。
+**無効化:** `.env` から `SLACK_WEBHOOK_URL` を削除 or コメントアウト。daily-live-run.sh は webhook URL が空なら通知 step を skip する。
 
 ### 4.4 現在の運用設定 (2026-04-24 〜)
 
