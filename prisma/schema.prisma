@@ -95,6 +95,50 @@ model VirtualPortfolioState {
   @@index([asset, date])
 }
 
+model ActualPortfolioState {
+  id               String   @id @default(cuid())
+  asset            String
+  date             DateTime
+  price            Float
+  targetPosition   Float
+  actualPosition   Float
+  cashJpy          Float
+  units            Float
+  equityJpy        Float
+  rebalancedToday  Boolean
+  rebalanceDelta   Float
+  feeJpy           Float
+  slippageBps      Float
+  cumulativeReturn Float
+  cumulativeFeeJpy Float
+  createdAt        DateTime @default(now())
+
+  @@unique([asset, date])
+  @@index([asset, date])
+}
+
+model OrderLog {
+  id             String    @id @default(cuid())
+  asset          String
+  date           DateTime
+  side           String
+  orderType      String
+  requestedUnits Float
+  execUnits      Float?
+  requestedPrice Float?
+  execPrice      Float?
+  feeJpy         Float?
+  orderId        String?
+  status         String
+  errorMessage   String?
+  submittedAt    DateTime
+  filledAt       DateTime?
+  rawResponse    Json?
+
+  @@index([asset, date])
+  @@index([status, submittedAt])
+}
+
 model DailyBar {
   id      String   @id @default(cuid())
   assetId String
