@@ -18,6 +18,10 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       YFINANCE_SERVICE_URL: http://127.0.0.1:8766
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      GMO_API_KEY: ${{ secrets.GMO_API_KEY }}
+      GMO_API_SECRET: ${{ secrets.GMO_API_SECRET }}
+      EXECUTION_ENABLED: ${{ secrets.EXECUTION_ENABLED }}
+      EXECUTION_ASSETS: ${{ secrets.EXECUTION_ASSETS }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +72,17 @@ jobs:
 
       - name: Run rebalance (ETH-USD)
         run: npx tsx scripts/live-rebalance.ts --asset=ETH-USD --initial-capital=10000
+
+      - name: Run actual execution (GMO, Phase 2)
+        if: env.EXECUTION_ENABLED == 'true' && env.GMO_API_KEY != ''
+        run: |
+          ASSETS="${EXECUTION_ASSETS:-BTC}"
+          IFS=',' read -r -a ASSET_ARR <<< "$ASSETS"
+          for A in "${ASSET_ARR[@]}"; do
+            A="$(echo "$A" | tr -d '[:space:]')"
+            echo "--- $A (Actual, GMO) ---"
+            npx tsx scripts/live-execute.ts --asset="$A" || echo "live-execute failed for $A (continuing)"
+          done
 
       - name: Stop sidecar
         if: always()
