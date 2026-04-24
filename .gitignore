@@ -4,6 +4,8 @@ dist/
 .env.local
 reports/backtests/*.json
 !reports/backtests/.gitkeep
+reports/live/*.json
+!reports/live/.gitkeep
 *.log
 yfinance-service/__pycache__/
 yfinance-service/.venv/
