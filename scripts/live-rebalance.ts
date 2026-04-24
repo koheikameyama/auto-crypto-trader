@@ -100,17 +100,33 @@ async function main() {
 
     console.log(`\n=== Live Rebalance Run: ${todayDateStr} (${asset}) ===\n`);
 
-    // Fetch recent macro/funding/asset price
+    // Fetch recent macro/funding/asset price (best-effort; yfinance occasionally 451s
+    // from cloud IPs — fall back to DB-cached history)
     console.log(`Fetching recent DXY + funding + ${asset} price...`);
-    const recentDxy = await fetchMacroDaily("DX-Y.NYB", bufferStart, bufferEnd);
-    await mergeMacro(prisma, "DX-Y.NYB", recentDxy);
+    let recentDxy: DailyBar[] = [];
+    try {
+      recentDxy = await fetchMacroDaily("DX-Y.NYB", bufferStart, bufferEnd);
+      await mergeMacro(prisma, "DX-Y.NYB", recentDxy);
+    } catch (e) {
+      console.warn(`DXY fetch failed, using cached: ${(e as Error).message}`);
+    }
 
     const fundingSymbol = asset === "BTC-USD" ? "BTCUSDT" : "ETHUSDT";
-    const recentFunding = await fetchFundingDaily(fundingSymbol, bufferStart, bufferEnd);
-    await mergeFunding(prisma, fundingSymbol, recentFunding);
+    let recentFunding: FundingBar[] = [];
+    try {
+      recentFunding = await fetchFundingDaily(fundingSymbol, bufferStart, bufferEnd);
+      await mergeFunding(prisma, fundingSymbol, recentFunding);
+    } catch (e) {
+      console.warn(`Funding fetch failed, using cached: ${(e as Error).message}`);
+    }
 
-    const recentPrice = await fetchCryptoDaily(asset, bufferStart, bufferEnd);
-    await mergeDailyBars(prisma, asset, recentPrice);
+    let recentPrice: DailyBar[] = [];
+    try {
+      recentPrice = await fetchCryptoDaily(asset, bufferStart, bufferEnd);
+      await mergeDailyBars(prisma, asset, recentPrice);
+    } catch (e) {
+      console.warn(`${asset} price fetch failed, using cached: ${(e as Error).message}`);
+    }
 
     // Load histories
     const lookbackStart = now.subtract(2, "year").toDate();
@@ -130,13 +146,24 @@ async function main() {
       date: r.date, avgRate: r.avgRate, count: r.count,
     }));
 
-    // Latest asset price
-    const priceRows = recentPrice.length > 0 ? recentPrice : [];
-    const latestPriceBar = priceRows[priceRows.length - 1];
-    if (!latestPriceBar || latestPriceBar.close <= 0) {
-      throw new Error(`No valid ${asset} price for today`);
+    // Latest asset price: prefer fresh fetch, fall back to DB
+    let price = recentPrice[recentPrice.length - 1]?.close ?? 0;
+    if (!(price > 0)) {
+      const assetRow = await prisma.asset.findUnique({ where: { symbol: asset } });
+      if (assetRow) {
+        const cachedBar = await prisma.dailyBar.findFirst({
+          where: { assetId: assetRow.id },
+          orderBy: { date: "desc" },
+        });
+        if (cachedBar && cachedBar.close > 0) {
+          price = cachedBar.close;
+          console.warn(`Using cached ${asset} price from ${cachedBar.date.toISOString().slice(0, 10)}: $${price.toFixed(2)}`);
+        }
+      }
     }
-    const price = latestPriceBar.close;
+    if (!(price > 0)) {
+      throw new Error(`No valid ${asset} price available (fetch + DB both empty)`);
+    }
 
     console.log(`Data: DXY ${dxyBars.length} rows, funding ${fundingBars.length} rows, ${asset} price $${price.toFixed(2)}`);
 
