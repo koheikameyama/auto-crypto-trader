@@ -98,8 +98,10 @@ jobs:
           DATE="$(date -u +%Y-%m-%d)"
           BTC_JSON="reports/live/${DATE}-BTC-USD-portfolio.json"
           ETH_JSON="reports/live/${DATE}-ETH-USD-portfolio.json"
+          BTC_ACTUAL_JSON="reports/live/${DATE}-BTC-actual.json"
+          ETH_ACTUAL_JSON="reports/live/${DATE}-ETH-actual.json"
 
-          build_asset_section() {
+          build_virtual_section() {
             local label="$1" file="$2"
             if [ ! -f "$file" ]; then
               echo "*${label}*"
@@ -113,21 +115,54 @@ jobs:
             cumret=$(jq -r '.cumulative.return' "$file")
             rebalanced=$(jq -r '.portfolio.rebalancedToday' "$file")
             fee=$(jq -r '.portfolio.feeUsd' "$file")
-            local reb_emoji="❌"
+            local reb_emoji="—"
             [ "$rebalanced" = "true" ] && reb_emoji="✅"
-            printf '*%s*\n' "$label"
+            printf '*%s (Virtual)*\n' "$label"
             printf '• Price: $%.2f\n' "$price"
             printf '• Target: %.1f%% long\n' "$(echo "$target * 100" | bc -l)"
             printf '• Equity: $%.2f (%+.2f%%)\n' "$equity" "$(echo "$cumret * 100" | bc -l)"
             printf '• Rebalanced: %s (fee $%.2f)\n' "$reb_emoji" "$fee"
           }
 
+          build_actual_section() {
+            local label="$1" file="$2"
+            if [ ! -f "$file" ]; then
+              return
+            fi
+            local price target equity cumret rebalanced fee slippage skipped
+            target=$(jq -r '.signal.targetPosition' "$file")
+            equity=$(jq -r '.portfolio.equityJpy' "$file")
+            cumret=$(jq -r '.cumulative.return' "$file")
+            rebalanced=$(jq -r '.portfolio.rebalancedToday' "$file")
+            fee=$(jq -r '.portfolio.feeJpy' "$file")
+            slippage=$(jq -r '.portfolio.slippageBps' "$file")
+            skipped=$(jq -r '.skipped' "$file")
+            local reb_emoji="—"
+            [ "$rebalanced" = "true" ] && reb_emoji="✅"
+            printf '*%s (Actual, GMO)*\n' "$label"
+            printf '• Target: %.1f%% long\n' "$(echo "$target * 100" | bc -l)"
+            printf '• Equity: ¥%.0f (%+.2f%%)\n' "$equity" "$(echo "$cumret * 100" | bc -l)"
+            if [ "$rebalanced" = "true" ]; then
+              printf '• Rebalanced: ✅ (fee ¥%.2f, slip %.1fbps)\n' "$fee" "$slippage"
+            else
+              printf '• Rebalanced: —\n'
+            fi
+          }
+
           {
             echo "📊 *Scheme E Daily Run* — ${DATE}"
             echo ""
-            build_asset_section "BTC-USD" "$BTC_JSON"
+            build_virtual_section "BTC-USD" "$BTC_JSON"
+            if [ -f "$BTC_ACTUAL_JSON" ]; then
+              echo ""
+              build_actual_section "BTC" "$BTC_ACTUAL_JSON"
+            fi
             echo ""
-            build_asset_section "ETH-USD" "$ETH_JSON"
+            build_virtual_section "ETH-USD" "$ETH_JSON"
+            if [ -f "$ETH_ACTUAL_JSON" ]; then
+              echo ""
+              build_actual_section "ETH" "$ETH_ACTUAL_JSON"
+            fi
           } > /tmp/slack-text.txt
 
           # Emit payload for Slack (plain text channel message)
