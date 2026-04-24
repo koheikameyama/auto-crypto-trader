@@ -51,13 +51,27 @@ for i in {1..15}; do
   fi
 done
 
-# Run BTC rebalance
-echo "--- BTC-USD ---"
+# Virtual rebalance — always runs (Phase 1.5)
+echo "--- BTC-USD (Virtual) ---"
 /Users/kouheikameyama/.asdf/shims/npx tsx scripts/live-rebalance.ts --asset=BTC-USD --initial-capital=10000
 
-# Run ETH rebalance
-echo "--- ETH-USD ---"
+echo "--- ETH-USD (Virtual) ---"
 /Users/kouheikameyama/.asdf/shims/npx tsx scripts/live-rebalance.ts --asset=ETH-USD --initial-capital=10000
+
+# Actual execution — Phase 2, gated by EXECUTION_ENABLED.
+# Set EXECUTION_ENABLED=true in .env to enable real GMO orders.
+# EXECUTION_ASSETS comma-separated (default: BTC). Example: "BTC,ETH"
+if [ "${EXECUTION_ENABLED:-false}" = "true" ]; then
+  ASSETS="${EXECUTION_ASSETS:-BTC}"
+  IFS=',' read -r -a ASSET_ARR <<< "$ASSETS"
+  for A in "${ASSET_ARR[@]}"; do
+    A="$(echo "$A" | tr -d '[:space:]')"
+    echo "--- $A (Actual, GMO) ---"
+    /Users/kouheikameyama/.asdf/shims/npx tsx scripts/live-execute.ts --asset="$A" || {
+      echo "live-execute failed for $A (continuing)"
+    }
+  done
+fi
 
 # Slack notification (optional; only if SLACK_WEBHOOK_URL is set)
 if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
