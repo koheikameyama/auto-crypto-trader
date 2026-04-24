@@ -65,8 +65,10 @@ async function main(): Promise<void> {
   }
   console.log();
 
-  console.log("[3/3] Private: getLatestExecutions()");
-  const execs = await client.getLatestExecutions();
+  console.log("[3/3] Private: getLatestExecutions(BTC) + getLatestExecutions(ETH)");
+  const btcExecs = await client.getLatestExecutions("BTC");
+  const ethExecs = await client.getLatestExecutions("ETH");
+  const execs = [...btcExecs, ...ethExecs];
   if (execs.length === 0) {
     console.log("  (no recent executions)");
   } else {
