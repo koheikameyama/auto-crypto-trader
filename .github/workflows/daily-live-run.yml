@@ -22,6 +22,7 @@ jobs:
       GMO_API_SECRET: ${{ secrets.GMO_API_SECRET }}
       EXECUTION_ENABLED: ${{ secrets.EXECUTION_ENABLED }}
       EXECUTION_ASSETS: ${{ secrets.EXECUTION_ASSETS }}
+      HEALTHCHECKS_URL: ${{ secrets.HEALTHCHECKS_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -182,6 +183,14 @@ jobs:
           curl -sS -X POST -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("⚠️ Scheme E daily run FAILED. Check logs: " + $url)}')" \
             "$SLACK_WEBHOOK_URL"
+
+      - name: Ping healthchecks (success)
+        if: success() && env.HEALTHCHECKS_URL != ''
+        run: curl -fsS --retry 3 "$HEALTHCHECKS_URL" > /dev/null
+
+      - name: Ping healthchecks (failure)
+        if: failure() && env.HEALTHCHECKS_URL != ''
+        run: curl -fsS --retry 3 "$HEALTHCHECKS_URL/fail" > /dev/null
 
       - name: Upload JSON reports as artifact
         if: always()
