@@ -203,6 +203,7 @@ export async function executeRebalance(
       asset,
       symbol,
       orderId: makerOrderId,
+      orderType: "LIMIT",
       side,
       submittedAt,
       timeoutMs: makerLimitWaitSec * MS_PER_SEC,
@@ -264,6 +265,7 @@ export async function executeRebalance(
         asset,
         symbol,
         orderId: marketResult.orderId,
+        orderType: "MARKET",
         side,
         submittedAt,
         timeoutMs: 10 * MS_PER_SEC,
@@ -345,13 +347,14 @@ interface WaitForFillInput {
   asset: ActualAsset;
   symbol: GmoSymbol;
   orderId: string;
+  orderType: "LIMIT" | "MARKET";
   side: "BUY" | "SELL";
   submittedAt: Date;
   timeoutMs: number;
 }
 
 async function waitForFill(input: WaitForFillInput): Promise<FillResult | null> {
-  const { client, symbol, orderId, timeoutMs } = input;
+  const { client, symbol, orderId, orderType, timeoutMs } = input;
   const deadline = Date.now() + timeoutMs;
   let pollIntervalMs = 500;
   while (Date.now() < deadline) {
@@ -367,7 +370,7 @@ async function waitForFill(input: WaitForFillInput): Promise<FillResult | null> 
         execUnits: totalSize,
         feeJpy,
         orderId,
-        orderType: "LIMIT",
+        orderType,
         filledAt: new Date(matches[matches.length - 1]?.timestamp ?? Date.now()),
       };
     }
