@@ -1,0 +1,46 @@
+name: Prisma Migrate Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "prisma/**"
+      - ".github/workflows/migrate.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: prisma-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy
+
+      - name: Slack notify on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("🚨 Prisma migrate FAILED on push. Check: " + $url)}')" \
+            "$SLACK_WEBHOOK_URL"
