@@ -130,21 +130,31 @@ jobs:
             if [ ! -f "$file" ]; then
               return
             fi
-            local price target equity cumret rebalanced fee slippage skipped
+            local target equity cumret rebalanced fee slippage delta units position
             target=$(jq -r '.signal.targetPosition' "$file")
             equity=$(jq -r '.portfolio.equityJpy' "$file")
             cumret=$(jq -r '.cumulative.return' "$file")
             rebalanced=$(jq -r '.portfolio.rebalancedToday' "$file")
             fee=$(jq -r '.portfolio.feeJpy' "$file")
             slippage=$(jq -r '.portfolio.slippageBps' "$file")
-            skipped=$(jq -r '.skipped' "$file")
-            local reb_emoji="—"
-            [ "$rebalanced" = "true" ] && reb_emoji="✅"
+            delta=$(jq -r '.portfolio.rebalanceDelta' "$file")
+            units=$(jq -r '.portfolio.units' "$file")
+            position=$(jq -r '.portfolio.actualPosition' "$file")
+
             printf '*%s (Actual, GMO)*\n' "$label"
             printf '• Target: %.1f%% long\n' "$(echo "$target * 100" | bc -l)"
+            printf '• Position: %s (%.1f%%)\n' "$units" "$(echo "$position * 100" | bc -l)"
             printf '• Equity: ¥%.0f (%+.2f%%)\n' "$equity" "$(echo "$cumret * 100" | bc -l)"
             if [ "$rebalanced" = "true" ]; then
-              printf '• Rebalanced: ✅ (fee ¥%.2f, slip %.1fbps)\n' "$fee" "$slippage"
+              local side qty
+              if [ "$(echo "$delta > 0" | bc -l)" = "1" ]; then
+                side="🟢 BUY"
+                qty=$delta
+              else
+                side="🔴 SELL"
+                qty=$(echo "$delta * -1" | bc -l)
+              fi
+              printf '• Rebalanced: ✅ %s %s %s (fee ¥%.2f, slip %.1fbps)\n' "$side" "$qty" "$label" "$fee" "$slippage"
             else
               printf '• Rebalanced: —\n'
             fi
