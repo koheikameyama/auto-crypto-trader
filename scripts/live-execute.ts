@@ -198,38 +198,47 @@ async function computeSignalForAsset(
   const bufferStart = now.subtract(30, "day").format("YYYY-MM-DD");
   const bufferEnd = now.format("YYYY-MM-DD");
 
-  const recentDxy = await fetchMacroDaily("DX-Y.NYB", bufferStart, bufferEnd);
-  if (recentDxy.length > 0) {
-    await prisma.macroBar.createMany({
-      data: recentDxy.map((b) => ({
-        ticker: "DX-Y.NYB",
-        date: b.date,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-        volume: b.volume,
-      })),
-      skipDuplicates: true,
-    });
+  // Best-effort: fall back to DB-cached bars if a source 451s or otherwise fails.
+  try {
+    const recentDxy = await fetchMacroDaily("DX-Y.NYB", bufferStart, bufferEnd);
+    if (recentDxy.length > 0) {
+      await prisma.macroBar.createMany({
+        data: recentDxy.map((b) => ({
+          ticker: "DX-Y.NYB",
+          date: b.date,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  } catch (e) {
+    console.warn(`DXY fetch failed, using cached: ${(e as Error).message}`);
   }
 
   const fundingSymbol = asset === "BTC" ? "BTCUSDT" : "ETHUSDT";
-  const recentFunding = await fetchFundingDaily(
-    fundingSymbol,
-    bufferStart,
-    bufferEnd,
-  );
-  if (recentFunding.length > 0) {
-    await prisma.fundingRate.createMany({
-      data: recentFunding.map((b) => ({
-        symbol: fundingSymbol,
-        date: b.date,
-        avgRate: b.avgRate,
-        count: b.count,
-      })),
-      skipDuplicates: true,
-    });
+  try {
+    const recentFunding = await fetchFundingDaily(
+      fundingSymbol,
+      bufferStart,
+      bufferEnd,
+    );
+    if (recentFunding.length > 0) {
+      await prisma.fundingRate.createMany({
+        data: recentFunding.map((b) => ({
+          symbol: fundingSymbol,
+          date: b.date,
+          avgRate: b.avgRate,
+          count: b.count,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  } catch (e) {
+    console.warn(`Funding fetch failed, using cached: ${(e as Error).message}`);
   }
 
   const lookbackStart = now.subtract(2, "year").toDate();
