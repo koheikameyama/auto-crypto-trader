@@ -1,7 +1,10 @@
 name: Daily Data Collection
 
 on:
-  # Triggered by cron-job.org via workflow_dispatch at 09:35 JST.
+  # Primary trigger: cron-job.org via workflow_dispatch at 09:35 JST.
+  # Native schedule disabled (see daily-live-run.yml for rationale).
+  # schedule:
+  #   - cron: "35 0 * * *"  # 00:35 UTC = 09:35 JST
   workflow_dispatch: {}
 
 concurrency:
