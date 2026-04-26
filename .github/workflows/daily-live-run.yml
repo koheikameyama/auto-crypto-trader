@@ -1,9 +1,8 @@
 name: Daily Live Run (Scheme E)
 
 on:
-  schedule:
-    # Daily 00:05 UTC = 09:05 JST
-    - cron: "5 0 * * *"
+  # Triggered by cron-job.org via workflow_dispatch (precise 09:05 JST timing).
+  # GitHub Actions native schedule removed — its delays were 0-3h (unreliable).
   workflow_dispatch: {}
 
 concurrency:

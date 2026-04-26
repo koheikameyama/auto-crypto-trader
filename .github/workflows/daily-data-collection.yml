@@ -1,9 +1,7 @@
 name: Daily Data Collection
 
 on:
-  schedule:
-    # 00:35 UTC = 09:35 JST (30 min after main daily-live-run)
-    - cron: "35 0 * * *"
+  # Triggered by cron-job.org via workflow_dispatch at 09:35 JST.
   workflow_dispatch: {}
 
 concurrency:
