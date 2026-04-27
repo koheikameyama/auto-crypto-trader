@@ -14,7 +14,7 @@ import type { AssetSymbol } from "../types/asset.js";
 
 const BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines";
 const KLINE_LIMIT = 1000;
-const COINGECKO_OHLC_URL = "https://api.coingecko.com/api/v3/coins";
+const COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3/coins";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 type BinanceKline = [
@@ -108,13 +108,19 @@ async function fetchFromBinance(
 }
 
 /**
- * CoinGecko OHLC endpoint.
- * Free tier: ~30 req/min. We make 1 request per day per asset, well below.
+ * CoinGecko market_chart endpoint (close-only price series).
  *
- * GET /coins/{id}/ohlc?vs_currency=usd&days=N
- *   N: 1 / 7 / 14 / 30 / 90 / 180 / 365 / max
- *   30+ days returns daily granularity (1 candle per day)
- *   Returns [[ts_ms, open, high, low, close], ...] (no volume)
+ * GET /coins/{id}/market_chart?vs_currency=usd&days=N
+ *   N <= 1   → 5-minute granularity
+ *   2..90    → hourly
+ *   91+      → daily 00:00 UTC (what we want)
+ *
+ * The OHLC endpoint cannot return true 1-day candles (it returns 4h for
+ * 30/90 and 4d for 180+), so we use market_chart and synthesize OHLC by
+ * setting open=high=low=close. Volume is null since this endpoint does
+ * not provide it.
+ *
+ * Free tier: ~30 req/min. We make 1 request per asset per live run.
  */
 async function fetchFromCoinGecko(
   asset: AssetSymbol,
@@ -122,34 +128,43 @@ async function fetchFromCoinGecko(
   endIso: string,
 ): Promise<DailyBar[]> {
   const id = toCoingeckoId(asset);
-  // Choose smallest valid `days` window covering our request
   const startMs = toMs(startIso);
   const endMs = toMs(endIso) + MS_PER_DAY - 1;
   const daysSpan = Math.ceil((Date.now() - startMs) / MS_PER_DAY);
-  const validDays = [1, 7, 14, 30, 90, 180, 365, 730];
-  const days = validDays.find((d) => d >= daysSpan) ?? 365;
+  // Force daily granularity: minimum 91 days. Cap at 365 (free-tier limit).
+  const days = Math.min(365, Math.max(91, daysSpan));
 
-  const url = `${COINGECKO_OHLC_URL}/${id}/ohlc?vs_currency=usd&days=${days}`;
+  const url = `${COINGECKO_BASE_URL}/${id}/market_chart?vs_currency=usd&days=${days}`;
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`coingecko ohlc error: ${res.status} ${body}`);
+    throw new Error(`coingecko market_chart error: ${res.status} ${body}`);
   }
-  const raw = (await res.json()) as Array<
-    [number, number, number, number, number]
-  >;
-  return raw
-    .filter(([ts]) => ts >= startMs && ts <= endMs)
-    .map(([ts, open, high, low, close]) => ({
-      date: new Date(ts),
-      open,
-      high,
-      low,
+  const raw = (await res.json()) as { prices: Array<[number, number]> };
+
+  // Snap each point to 00:00 UTC of its date. The last point may be a
+  // partial "current price" with a non-midnight timestamp; snapping makes
+  // it collide with that day's daily point and get deduplicated by the
+  // unique (assetId, date) constraint downstream.
+  const seen = new Set<number>();
+  const bars: DailyBar[] = [];
+  for (const [ts, close] of raw.prices) {
+    const dayMs = Math.floor(ts / MS_PER_DAY) * MS_PER_DAY;
+    if (dayMs < startMs || dayMs > endMs) continue;
+    if (seen.has(dayMs)) continue;
+    seen.add(dayMs);
+    bars.push({
+      date: new Date(dayMs),
+      open: close,
+      high: close,
+      low: close,
       close,
       volume: null,
-    }));
+    });
+  }
+  return bars;
 }
 
 export async function fetchCryptoDaily(
