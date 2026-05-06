@@ -79,12 +79,22 @@ jobs:
       - name: Run actual execution (GMO, Phase 2)
         if: env.EXECUTION_ENABLED == 'true' && env.GMO_API_KEY != ''
         run: |
+          DATE="$(date -u +%Y-%m-%d)"
+          mkdir -p reports/live
           ASSETS="${EXECUTION_ASSETS:-BTC}"
           IFS=',' read -r -a ASSET_ARR <<< "$ASSETS"
           for A in "${ASSET_ARR[@]}"; do
             A="$(echo "$A" | tr -d '[:space:]')"
             echo "--- $A (Actual, GMO) ---"
-            npx tsx scripts/live-execute.ts --asset="$A" || echo "live-execute failed for $A (continuing)"
+            LOG="/tmp/${A}-execute.log"
+            if npx tsx scripts/live-execute.ts --asset="$A" 2>&1 | tee "$LOG"; then
+              rm -f "reports/live/${DATE}-${A}-actual-skip.txt"
+            else
+              REASON="$(grep -oE 'GmoApiError:.*|Error:.*' "$LOG" | head -n 1 | head -c 200)"
+              [ -z "$REASON" ] && REASON="unknown failure (see workflow logs)"
+              echo "$REASON" > "reports/live/${DATE}-${A}-actual-skip.txt"
+              echo "live-execute failed for $A: $REASON (continuing)"
+            fi
           done
 
       - name: Stop sidecar
@@ -127,6 +137,14 @@ jobs:
             printf '• Rebalanced: %s (fee $%.2f)\n' "$reb_emoji" "$fee"
           }
 
+          build_actual_skip_section() {
+            local label="$1" file="$2"
+            local reason
+            reason="$(cat "$file")"
+            printf '*%s (Actual, GMO)*\n' "$label"
+            printf '• ⚠️ ACTUAL SKIPPED: %s\n' "$reason"
+          }
+
           build_actual_section() {
             local label="$1" file="$2"
             if [ ! -f "$file" ]; then
@@ -166,15 +184,23 @@ jobs:
             echo "📊 *Scheme E Daily Run* — ${DATE}"
             echo ""
             build_virtual_section "BTC-USD" "$BTC_JSON"
+            BTC_SKIP="reports/live/${DATE}-BTC-actual-skip.txt"
             if [ -f "$BTC_ACTUAL_JSON" ]; then
               echo ""
               build_actual_section "BTC" "$BTC_ACTUAL_JSON"
+            elif [ -f "$BTC_SKIP" ]; then
+              echo ""
+              build_actual_skip_section "BTC" "$BTC_SKIP"
             fi
             echo ""
             build_virtual_section "ETH-USD" "$ETH_JSON"
+            ETH_SKIP="reports/live/${DATE}-ETH-actual-skip.txt"
             if [ -f "$ETH_ACTUAL_JSON" ]; then
               echo ""
               build_actual_section "ETH" "$ETH_ACTUAL_JSON"
+            elif [ -f "$ETH_SKIP" ]; then
+              echo ""
+              build_actual_skip_section "ETH" "$ETH_SKIP"
             fi
           } > /tmp/slack-text.txt
 
