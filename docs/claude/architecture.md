@@ -3,7 +3,7 @@
 ## 全体フロー
 
 ```
-cron-job.org (09:05 JST)
+cron-job.org (10:05 JST)  # 09:05→10:05 へ移動: GMO 朝メンテ窓回避（2026-05-10）
   └─ workflow_dispatch → GitHub Actions
        └─ daily-live-run.yml
             ├─ Prisma migrate deploy

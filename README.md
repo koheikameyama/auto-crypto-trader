@@ -4,14 +4,14 @@ BTC/ETH の target position を日次で算出し、virtual portfolio として�
 
 - **Strategy:** Scheme E — 2-signal weighted ensemble (DXY 0.60 + Funding 0.40)
 - **運用:** Phase 1.5 — exchange 接続なし、virtual P&L で追跡
-- **自動化:** macOS launchd 毎日 09:05 JST (= 00:05 UTC)
+- **自動化:** cron-job.org 毎日 10:05 JST (= 01:05 UTC) → GitHub Actions workflow_dispatch
 - **通知:** Slack Incoming Webhook (任意)
 
 ---
 
 ## 毎日やること
 
-**何もしなくてよい。** launchd が 09:05 JST に `scripts/daily-live-run.sh` を自動実行し、以下をこなす:
+**何もしなくてよい。** cron-job.org が 10:05 JST に GitHub Actions の `daily-live-run.yml` を起動し、以下をこなす:
 
 1. yfinance sidecar 起動
 2. BTC-USD / ETH-USD の signal 計算 & virtual rebalance

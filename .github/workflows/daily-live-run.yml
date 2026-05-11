@@ -1,11 +1,12 @@
 name: Daily Live Run (Scheme E)
 
 on:
-  # Primary trigger: cron-job.org via workflow_dispatch at 09:05 JST (±1 min).
+  # Primary trigger: cron-job.org via workflow_dispatch at 10:05 JST (±1 min).
+  # Shifted from 09:05 → 10:05 on 2026-05-10 to avoid GMO Coin morning maintenance.
   # Native schedule disabled because GitHub delays it 0-3h under load.
   # Re-enable as fallback if cron-job.org becomes unreliable.
   # schedule:
-  #   - cron: "5 0 * * *"  # 00:05 UTC = 09:05 JST
+  #   - cron: "5 1 * * *"  # 01:05 UTC = 10:05 JST
   workflow_dispatch: {}
 
 concurrency:

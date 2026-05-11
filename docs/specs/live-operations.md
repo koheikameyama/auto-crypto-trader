@@ -183,7 +183,7 @@ ETH-USD
 
 本 repo の `scripts/com.user.auto-crypto-trader.live.plist` が **本番稼働中** の plist。
 
-- **実行時刻**: 毎日 **09:05 JST** (= 00:05 UTC、Binance funding / DXY 更新直後)
+- **実行時刻**: 毎日 **10:05 JST** (= 01:05 UTC、GMO 朝メンテ窓回避のため 2026-05-10 に 09:05 → 10:05 へ移動)
 - **実行内容**: `scripts/daily-live-run.sh` → sidecar 起動 → BTC/ETH 両 rebalance → sidecar 停止
 - **ログ**: `/tmp/auto-crypto-trader-live.{out,err}.log`
 - **初回 backfill**: BTC-USD / ETH-USD 両方で 2026-04-23 に $10,000 スタート済
