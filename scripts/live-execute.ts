@@ -40,7 +40,7 @@ function parseArgs(): CliArgs {
   let asset: ActualAsset = "BTC";
   let dryRun = false;
   let rebalanceThreshold = 0.1;
-  let makerLimitWaitSec = 10;
+  let makerLimitWaitSec = 300;
   for (const a of process.argv.slice(2)) {
     if (a.startsWith("--asset=")) {
       const v = a.slice("--asset=".length);
