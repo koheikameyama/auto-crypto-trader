@@ -16,9 +16,9 @@ BTC/ETH の日次 rebalance を行う暗号通貨自動取引システム。
 ## 現在の Phase
 
 - ✅ Phase 1.5: Virtual P&L tracking
-- 🟢 **Phase 2.1 Micro: ¥30,000 actual execution（2026-04-26 開始、2026-05-09 判定）**
-- ⏳ Phase 2.2 Small: ¥100,000（条件 PASS 後）
-- ⏳ Phase 2.3 Seed: ¥1,000,000
+- ✅ Phase 2.1 Micro: ¥30,000 actual execution（2026-04-26 開始、2026-05-09 判定 PASS）
+- 🟢 **Phase 2.2 Small: ¥100,000 actual execution（2026-05-12 開始、〜2026-06-12 目処）**
+- ⏳ Phase 2.3 Seed: ¥1,000,000（条件 PASS 後）
 - ⏳ Phase 3 Target: 本資金
 
 ---

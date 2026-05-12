@@ -99,5 +99,5 @@ PR 作成時、本文に `Fixes KOH-XX` を必ず記載 → マージで自動 c
 
 主要タスク:
 - 親: [KOH-431](https://linear.app/koheikameyama/issue/KOH-431) Round 11 Phase 2
-- アクティブ: [KOH-442](https://linear.app/koheikameyama/issue/KOH-442) Phase 2.1 Micro（due 2026-05-09）
-- 次: [KOH-444](https://linear.app/koheikameyama/issue/KOH-444) Round 12 Fee 再最適化（due 2026-05-16）
+- アクティブ: [KOH-489](https://linear.app/koheikameyama/issue/KOH-489) Phase 2.2 Small ¥100,000（due 2026-06-12）
+- 前段（完了）: [KOH-442](https://linear.app/koheikameyama/issue/KOH-442) Phase 2.1 Micro、[KOH-444](https://linear.app/koheikameyama/issue/KOH-444) Round 12 Fee 再最適化
