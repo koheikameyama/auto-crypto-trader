@@ -1,0 +1,68 @@
+name: Weekly Virtual vs Actual Compare
+
+on:
+  # Native schedule is used (not cron-job.org) since 0-3h delay is acceptable
+  # for a weekly informational run.
+  schedule:
+    - cron: "30 1 * * 1"  # Monday 01:30 UTC = Monday 10:30 JST
+  workflow_dispatch: {}
+
+concurrency:
+  group: weekly-compare
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Run compare-dashboard (BTC, 14d)
+        run: npx tsx scripts/compare-dashboard.ts --asset=BTC --days=14 | tee /tmp/btc-compare.txt
+
+      - name: Run compare-dashboard (ETH, 14d)
+        run: npx tsx scripts/compare-dashboard.ts --asset=ETH --days=14 | tee /tmp/eth-compare.txt
+
+      - name: Send Slack notification
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          DATE="$(date -u +%Y-%m-%d)"
+          {
+            echo "📈 *Weekly Virtual vs Actual Compare* — ${DATE}"
+            echo ""
+            echo '```'
+            cat /tmp/btc-compare.txt
+            echo '```'
+            echo ""
+            echo '```'
+            cat /tmp/eth-compare.txt
+            echo '```'
+          } > /tmp/slack-text.txt
+          jq -nc --rawfile text /tmp/slack-text.txt '{text: $text}' > /tmp/slack-payload.json
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data @/tmp/slack-payload.json \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("⚠️ Weekly compare FAILED. Check: " + $url)}')" \
+            "$SLACK_WEBHOOK_URL"

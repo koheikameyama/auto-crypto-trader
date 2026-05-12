@@ -31,6 +31,9 @@ gh workflow run daily-live-run.yml --repo koheikameyama/auto-crypto-trader
 # Daily data collection
 gh workflow run daily-data-collection.yml --repo koheikameyama/auto-crypto-trader
 
+# Weekly virtual vs actual compare (毎週月曜 10:30 JST、native schedule)
+gh workflow run weekly-compare.yml --repo koheikameyama/auto-crypto-trader
+
 # Migrate（push to prisma/ で自動発火、または手動）
 gh workflow run migrate.yml --repo koheikameyama/auto-crypto-trader
 ```
