@@ -435,6 +435,38 @@ function gmoErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Cost-basis cumulative return: (equity − Σdeposits + Σwithdrawals) / Σdeposits.
+ * Uses CapitalEvent so that adding capital between phases is not counted as P&L.
+ * If no CapitalEvent has been seeded yet, falls back to the legacy first-record
+ * baseline so DD-based kill-switch keeps working until backfill runs.
+ */
+export async function computeCumulativeReturn(
+  prisma: PrismaClient,
+  asset: string,
+  asOf: Date,
+  equityJpy: number,
+): Promise<number> {
+  const events = await prisma.capitalEvent.findMany({
+    where: { asset, date: { lte: asOf } },
+    select: { deltaJpy: true },
+  });
+  if (events.length > 0) {
+    const netContributions = events.reduce((sum, e) => sum + e.deltaJpy, 0);
+    return netContributions > 0
+      ? (equityJpy - netContributions) / netContributions
+      : 0;
+  }
+  const first = await prisma.actualPortfolioState.findFirst({
+    where: { asset },
+    orderBy: { date: "asc" },
+  });
+  const initialCapitalJpy = first ? first.equityJpy + first.feeJpy : equityJpy;
+  return initialCapitalJpy > 0
+    ? (equityJpy - initialCapitalJpy) / initialCapitalJpy
+    : 0;
+}
+
 interface WriteStateInput {
   prisma: PrismaClient;
   asset: string;
@@ -474,15 +506,12 @@ async function writeState(
     where: { asset, date: { lt: today } },
     orderBy: { date: "desc" },
   });
-  const first = await prisma.actualPortfolioState.findFirst({
-    where: { asset },
-    orderBy: { date: "asc" },
-  });
-  const initialCapitalJpy = first
-    ? first.equityJpy + first.feeJpy
-    : equityJpy;
-  const cumulativeReturn =
-    initialCapitalJpy > 0 ? (equityJpy - initialCapitalJpy) / initialCapitalJpy : 0;
+  const cumulativeReturn = await computeCumulativeReturn(
+    prisma,
+    asset,
+    today,
+    equityJpy,
+  );
   const cumulativeFeeJpy = (prev?.cumulativeFeeJpy ?? 0) + feeJpy;
 
   await prisma.actualPortfolioState.upsert({

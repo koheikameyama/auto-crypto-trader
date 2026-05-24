@@ -117,6 +117,20 @@ model ActualPortfolioState {
   @@index([asset, date])
 }
 
+/// Records deposit/withdrawal events so that cumulative P&L on
+/// ActualPortfolioState is computed against true cost basis, not the
+/// first equity snapshot (which would conflate later deposits as gains).
+model CapitalEvent {
+  id        String   @id @default(cuid())
+  asset     String
+  date      DateTime
+  deltaJpy  Float
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([asset, date])
+}
+
 model OrderLog {
   id             String    @id @default(cuid())
   asset          String
