@@ -44,12 +44,6 @@ export interface ExecutionAdapterInput {
   rebalanceThreshold: number;
   makerLimitWaitSec: number;
   dryRun?: boolean;
-  /**
-   * JPY amount deposited (or withdrawn, if negative) on this date. Persisted
-   * to ActualPortfolioState.depositJpy and excluded from time-weighted return
-   * so capital injections don't show up as profit. Default 0.
-   */
-  depositJpy?: number;
 }
 
 export interface ExecutionAdapterOutput {
@@ -96,8 +90,9 @@ export async function executeRebalance(
     rebalanceThreshold,
     makerLimitWaitSec,
     dryRun,
-    depositJpy = 0,
   } = input;
+
+  const depositJpy = await fetchTodayDeposit(prisma, asset, today);
 
   const killSwitch = await checkKillSwitch(prisma, asset, DEFAULT_KILL_SWITCH);
   if (!killSwitch.ok) {
@@ -461,6 +456,24 @@ interface WriteStateInput {
   slippageBps: number;
   depositJpy: number;
   skipReason?: string;
+}
+
+/**
+ * Reads today's recorded deposit (if any) from DepositEvent. Returns 0 when
+ * there's no event. Persisting deposits in a dedicated table — rather than as
+ * a CLI flag on the daily run — means the user can record a top-up at any
+ * time (before, on, or after the deposit date) and the right row will pick
+ * it up via the unique (asset, date) constraint.
+ */
+async function fetchTodayDeposit(
+  prisma: PrismaClient,
+  asset: string,
+  today: Date,
+): Promise<number> {
+  const event = await prisma.depositEvent.findFirst({
+    where: { asset, date: today },
+  });
+  return event?.amountJpy ?? 0;
 }
 
 /**

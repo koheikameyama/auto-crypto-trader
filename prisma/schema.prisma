@@ -95,6 +95,18 @@ model VirtualPortfolioState {
   @@index([asset, date])
 }
 
+model DepositEvent {
+  id        String   @id @default(cuid())
+  asset     String
+  date      DateTime
+  amountJpy Float
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@unique([asset, date])
+  @@index([asset, date])
+}
+
 model ActualPortfolioState {
   id               String   @id @default(cuid())
   asset            String

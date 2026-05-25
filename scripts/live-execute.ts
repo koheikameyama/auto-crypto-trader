@@ -36,7 +36,6 @@ interface CliArgs {
   dryRun: boolean;
   rebalanceThreshold: number;
   makerLimitWaitSec: number;
-  depositJpy: number;
 }
 
 function parseArgs(): CliArgs {
@@ -44,7 +43,6 @@ function parseArgs(): CliArgs {
   let dryRun = false;
   let rebalanceThreshold = 0.1;
   let makerLimitWaitSec = 300;
-  let depositJpy = 0;
   for (const a of process.argv.slice(2)) {
     if (a.startsWith("--asset=")) {
       const v = a.slice("--asset=".length);
@@ -56,21 +54,15 @@ function parseArgs(): CliArgs {
       rebalanceThreshold = Number(a.slice("--rebalance-threshold=".length));
     } else if (a.startsWith("--maker-wait-sec=")) {
       makerLimitWaitSec = Number(a.slice("--maker-wait-sec=".length));
-    } else if (a.startsWith("--deposit-jpy=")) {
-      depositJpy = Number(a.slice("--deposit-jpy=".length));
-      if (!Number.isFinite(depositJpy)) {
-        throw new Error(`--deposit-jpy must be a finite number, got: ${a}`);
-      }
     } else {
       throw new Error(`Unknown arg: ${a}`);
     }
   }
-  return { asset, dryRun, rebalanceThreshold, makerLimitWaitSec, depositJpy };
+  return { asset, dryRun, rebalanceThreshold, makerLimitWaitSec };
 }
 
 async function main(): Promise<void> {
-  const { asset, dryRun, rebalanceThreshold, makerLimitWaitSec, depositJpy } =
-    parseArgs();
+  const { asset, dryRun, rebalanceThreshold, makerLimitWaitSec } = parseArgs();
   const apiKey = process.env.GMO_API_KEY;
   const apiSecret = process.env.GMO_API_SECRET;
   if (!apiKey || !apiSecret) {
@@ -86,7 +78,7 @@ async function main(): Promise<void> {
     const today = new Date(`${todayDateStr}T00:00:00Z`);
 
     console.log(
-      `\n=== Live Execute: ${todayDateStr} (${asset}${dryRun ? ", DRY-RUN" : ""}${depositJpy !== 0 ? `, deposit=¥${depositJpy}` : ""}) ===\n`,
+      `\n=== Live Execute: ${todayDateStr} (${asset}${dryRun ? ", DRY-RUN" : ""}) ===\n`,
     );
 
     const sig = await computeSignalForAsset(prisma, asset, now);
@@ -105,7 +97,6 @@ async function main(): Promise<void> {
         rebalanceThreshold,
         makerLimitWaitSec,
         dryRun,
-        depositJpy,
       });
     } catch (err) {
       if (isTransientGmoOutage(err)) {
