@@ -15,10 +15,12 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { GmoClient } from "../src/live/gmo-client.js";
+import { GmoApiError, GmoClient } from "../src/live/gmo-client.js";
 import {
   executeRebalance,
+  recordStateUnchanged,
   type ActualAsset,
+  type ExecutionAdapterOutput,
 } from "../src/live/execution-adapter.js";
 import { checkAlerts } from "../src/live/kill-switch.js";
 import { computeLiveSignal } from "../src/live/signal-computer.js";
@@ -34,6 +36,7 @@ interface CliArgs {
   dryRun: boolean;
   rebalanceThreshold: number;
   makerLimitWaitSec: number;
+  depositJpy: number;
 }
 
 function parseArgs(): CliArgs {
@@ -41,6 +44,7 @@ function parseArgs(): CliArgs {
   let dryRun = false;
   let rebalanceThreshold = 0.1;
   let makerLimitWaitSec = 300;
+  let depositJpy = 0;
   for (const a of process.argv.slice(2)) {
     if (a.startsWith("--asset=")) {
       const v = a.slice("--asset=".length);
@@ -52,15 +56,21 @@ function parseArgs(): CliArgs {
       rebalanceThreshold = Number(a.slice("--rebalance-threshold=".length));
     } else if (a.startsWith("--maker-wait-sec=")) {
       makerLimitWaitSec = Number(a.slice("--maker-wait-sec=".length));
+    } else if (a.startsWith("--deposit-jpy=")) {
+      depositJpy = Number(a.slice("--deposit-jpy=".length));
+      if (!Number.isFinite(depositJpy)) {
+        throw new Error(`--deposit-jpy must be a finite number, got: ${a}`);
+      }
     } else {
       throw new Error(`Unknown arg: ${a}`);
     }
   }
-  return { asset, dryRun, rebalanceThreshold, makerLimitWaitSec };
+  return { asset, dryRun, rebalanceThreshold, makerLimitWaitSec, depositJpy };
 }
 
 async function main(): Promise<void> {
-  const { asset, dryRun, rebalanceThreshold, makerLimitWaitSec } = parseArgs();
+  const { asset, dryRun, rebalanceThreshold, makerLimitWaitSec, depositJpy } =
+    parseArgs();
   const apiKey = process.env.GMO_API_KEY;
   const apiSecret = process.env.GMO_API_SECRET;
   if (!apiKey || !apiSecret) {
@@ -76,7 +86,7 @@ async function main(): Promise<void> {
     const today = new Date(`${todayDateStr}T00:00:00Z`);
 
     console.log(
-      `\n=== Live Execute: ${todayDateStr} (${asset}${dryRun ? ", DRY-RUN" : ""}) ===\n`,
+      `\n=== Live Execute: ${todayDateStr} (${asset}${dryRun ? ", DRY-RUN" : ""}${depositJpy !== 0 ? `, deposit=¥${depositJpy}` : ""}) ===\n`,
     );
 
     const sig = await computeSignalForAsset(prisma, asset, now);
@@ -84,16 +94,35 @@ async function main(): Promise<void> {
       `Signal: DXY score ${sig.dxyScore.toFixed(3)}, funding score ${sig.fundingScore.toFixed(3)}, target ${(sig.targetPosition * 100).toFixed(1)}% long`,
     );
 
-    const result = await executeRebalance({
-      asset,
-      targetPosition: sig.targetPosition,
-      client,
-      prisma,
-      today,
-      rebalanceThreshold,
-      makerLimitWaitSec,
-      dryRun,
-    });
+    let result: ExecutionAdapterOutput;
+    try {
+      result = await executeRebalance({
+        asset,
+        targetPosition: sig.targetPosition,
+        client,
+        prisma,
+        today,
+        rebalanceThreshold,
+        makerLimitWaitSec,
+        dryRun,
+        depositJpy,
+      });
+    } catch (err) {
+      if (isTransientGmoOutage(err)) {
+        console.log(
+          `\n⚠️  GMO transient outage detected (${(err as Error).message}). Writing carry row.`,
+        );
+        result = await recordStateUnchanged(
+          prisma,
+          asset,
+          today,
+          sig.targetPosition,
+          "gmo_maintenance",
+        );
+      } else {
+        throw err;
+      }
+    }
 
     console.log();
     if (result.skipped) {
@@ -186,6 +215,23 @@ async function main(): Promise<void> {
   } finally {
     await prisma.$disconnect();
   }
+}
+
+/**
+ * GMO Coin returns ERR-5106 with message "MAINTENANCE" during scheduled
+ * maintenance windows (incl. ~Saturday 10:05 JST observed 2026-05-16 / 05-23).
+ * Treat these as transient: skip the day, write a carry row, don't fail the
+ * workflow. Any other error still throws.
+ */
+function isTransientGmoOutage(err: unknown): boolean {
+  if (!(err instanceof GmoApiError)) return false;
+  const haystack = [
+    err.message,
+    ...(err.messages?.map((m) => m.message_string) ?? []),
+  ]
+    .join(" ")
+    .toUpperCase();
+  return haystack.includes("MAINTENANCE");
 }
 
 async function computeSignalForAsset(

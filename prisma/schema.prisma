@@ -111,6 +111,8 @@ model ActualPortfolioState {
   slippageBps      Float
   cumulativeReturn Float
   cumulativeFeeJpy Float
+  depositJpy       Float    @default(0)
+  skipReason       String?
   createdAt        DateTime @default(now())
 
   @@unique([asset, date])

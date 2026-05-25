@@ -44,6 +44,12 @@ export interface ExecutionAdapterInput {
   rebalanceThreshold: number;
   makerLimitWaitSec: number;
   dryRun?: boolean;
+  /**
+   * JPY amount deposited (or withdrawn, if negative) on this date. Persisted
+   * to ActualPortfolioState.depositJpy and excluded from time-weighted return
+   * so capital injections don't show up as profit. Default 0.
+   */
+  depositJpy?: number;
 }
 
 export interface ExecutionAdapterOutput {
@@ -90,6 +96,7 @@ export async function executeRebalance(
     rebalanceThreshold,
     makerLimitWaitSec,
     dryRun,
+    depositJpy = 0,
   } = input;
 
   const killSwitch = await checkKillSwitch(prisma, asset, DEFAULT_KILL_SWITCH);
@@ -128,6 +135,7 @@ export async function executeRebalance(
       rebalanceDelta: 0,
       feeJpy: 0,
       slippageBps: 0,
+      depositJpy,
     });
   }
 
@@ -150,6 +158,7 @@ export async function executeRebalance(
       rebalanceDelta: 0,
       feeJpy: 0,
       slippageBps: 0,
+      depositJpy,
       skipReason: `size ${sizeStr} < min_lot ${MIN_LOT[asset]}`,
     });
   }
@@ -168,6 +177,7 @@ export async function executeRebalance(
       rebalanceDelta: 0,
       feeJpy: 0,
       slippageBps: 0,
+      depositJpy,
       skipReason: `dry_run: would_${side.toLowerCase()}_${sizeStr}`,
     });
   }
@@ -329,6 +339,7 @@ export async function executeRebalance(
     rebalanceDelta: signedDelta,
     feeJpy: fill.feeJpy,
     slippageBps,
+    depositJpy,
   });
 }
 
@@ -448,7 +459,29 @@ interface WriteStateInput {
   rebalanceDelta: number;
   feeJpy: number;
   slippageBps: number;
+  depositJpy: number;
   skipReason?: string;
+}
+
+/**
+ * Time-weighted cumulative return that excludes capital injections.
+ *
+ *   dailyReturn = (equity - deposit - prevEquity) / prevEquity
+ *   cumret      = (1 + prevCumret) * (1 + dailyReturn) - 1
+ *
+ * The deposit term cancels the cash-add so a top-up never registers as profit.
+ * If no prev row exists, this is the first day — treat depositJpy as the seed
+ * capital and set dailyReturn = 0 so cumret starts at 0.
+ */
+function computeTwrCumulativeReturn(
+  equityJpy: number,
+  depositJpy: number,
+  prev: { equityJpy: number; cumulativeReturn: number } | null,
+): number {
+  if (!prev || prev.equityJpy <= 0) return 0;
+  const dailyReturn =
+    (equityJpy - depositJpy - prev.equityJpy) / prev.equityJpy;
+  return (1 + prev.cumulativeReturn) * (1 + dailyReturn) - 1;
 }
 
 async function writeState(
@@ -467,6 +500,7 @@ async function writeState(
     rebalanceDelta,
     feeJpy,
     slippageBps,
+    depositJpy,
     skipReason,
   } = input;
 
@@ -474,15 +508,11 @@ async function writeState(
     where: { asset, date: { lt: today } },
     orderBy: { date: "desc" },
   });
-  const first = await prisma.actualPortfolioState.findFirst({
-    where: { asset },
-    orderBy: { date: "asc" },
-  });
-  const initialCapitalJpy = first
-    ? first.equityJpy + first.feeJpy
-    : equityJpy;
-  const cumulativeReturn =
-    initialCapitalJpy > 0 ? (equityJpy - initialCapitalJpy) / initialCapitalJpy : 0;
+  const cumulativeReturn = computeTwrCumulativeReturn(
+    equityJpy,
+    depositJpy,
+    prev,
+  );
   const cumulativeFeeJpy = (prev?.cumulativeFeeJpy ?? 0) + feeJpy;
 
   await prisma.actualPortfolioState.upsert({
@@ -502,6 +532,8 @@ async function writeState(
       slippageBps,
       cumulativeReturn,
       cumulativeFeeJpy,
+      depositJpy,
+      skipReason: skipReason ?? null,
     },
     update: {
       price: refMid,
@@ -516,6 +548,8 @@ async function writeState(
       slippageBps,
       cumulativeReturn,
       cumulativeFeeJpy,
+      depositJpy,
+      skipReason: skipReason ?? null,
     },
   });
 
@@ -536,7 +570,13 @@ async function writeState(
   };
 }
 
-async function recordStateUnchanged(
+/**
+ * Persist a carry-over row when we can't reach the exchange (kill switch trip,
+ * GMO maintenance, etc.). Mirrors the previous day's position, sets
+ * rebalancedToday=false, and records skipReason. Without this, ActualPortfolioState
+ * is missing rows on those days and Compare dashboards show gaps.
+ */
+export async function recordStateUnchanged(
   prisma: PrismaClient,
   asset: string,
   today: Date,
@@ -564,6 +604,33 @@ async function recordStateUnchanged(
       cumulativeFeeJpy: 0,
     };
   }
+
+  await prisma.actualPortfolioState.upsert({
+    where: { asset_date: { asset, date: today } },
+    create: {
+      asset,
+      date: today,
+      price: prev.price,
+      targetPosition,
+      actualPosition: prev.actualPosition,
+      cashJpy: prev.cashJpy,
+      units: prev.units,
+      equityJpy: prev.equityJpy,
+      rebalancedToday: false,
+      rebalanceDelta: 0,
+      feeJpy: 0,
+      slippageBps: 0,
+      cumulativeReturn: prev.cumulativeReturn,
+      cumulativeFeeJpy: prev.cumulativeFeeJpy,
+      depositJpy: 0,
+      skipReason,
+    },
+    update: {
+      targetPosition,
+      skipReason,
+    },
+  });
+
   return {
     skipped: true,
     skipReason,
