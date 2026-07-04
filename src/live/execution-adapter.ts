@@ -44,6 +44,18 @@ export interface ExecutionAdapterInput {
   rebalanceThreshold: number;
   makerLimitWaitSec: number;
   dryRun?: boolean;
+  /**
+   * This asset's share of total account equity (multi-asset allocation).
+   * Defaults to 1.0 (single-asset: the asset owns the whole account).
+   */
+  allocationWeight?: number;
+  /**
+   * Full set of assets sharing the GMO account. Used to value the whole
+   * account (JPY + every asset's holdings) so this asset can size its trade
+   * against its allocated slice rather than the entire JPY pool (forbidden #6).
+   * Defaults to [asset] (single-asset).
+   */
+  allocationAssets?: ActualAsset[];
 }
 
 export interface ExecutionAdapterOutput {
@@ -90,6 +102,8 @@ export async function executeRebalance(
     rebalanceThreshold,
     makerLimitWaitSec,
     dryRun,
+    allocationWeight = 1,
+    allocationAssets = [asset],
   } = input;
 
   const depositJpy = await fetchTodayDeposit(prisma, asset, today);
@@ -110,21 +124,37 @@ export async function executeRebalance(
   const refMid = (ticker.bid + ticker.ask) / 2;
 
   const account = await readAccountSnapshot(client, asset);
-  const equityJpy = account.jpy + account.units * refMid;
+  // Value the WHOLE account (shared JPY + every allocation asset's holdings),
+  // then take this asset's slice. With allocationWeight=1 / allocationAssets=[asset]
+  // this reduces exactly to the legacy single-asset equity (jpy + units*mid).
+  const peerHoldingsValueJpy = await valuePeerHoldings(
+    client,
+    asset,
+    allocationAssets,
+  );
+  const totalEquityJpy = account.jpy + account.units * refMid + peerHoldingsValueJpy;
+  const subEquityJpy = totalEquityJpy * allocationWeight;
   const currentValue = account.units * refMid;
-  const currentPosition = equityJpy > 0 ? currentValue / equityJpy : 0;
-  const targetValue = equityJpy * targetPosition;
+  const currentPosition = subEquityJpy > 0 ? currentValue / subEquityJpy : 0;
+  const targetValue = subEquityJpy * targetPosition;
   const deltaJpy = targetValue - currentValue;
 
-  if (Math.abs(deltaJpy) / Math.max(equityJpy, 1) < rebalanceThreshold) {
+  // The per-asset row records the ALLOCATED slice, not the raw shared JPY, so
+  // summing BTC + ETH rows never double-counts the single JPY balance.
+  const allocatedAccount = {
+    jpy: subEquityJpy - currentValue,
+    units: account.units,
+  };
+
+  if (Math.abs(deltaJpy) / Math.max(subEquityJpy, 1) < rebalanceThreshold) {
     return await writeState({
       prisma,
       asset,
       today,
       refMid,
       targetPosition,
-      account,
-      equityJpy,
+      account: allocatedAccount,
+      equityJpy: subEquityJpy,
       currentPosition,
       rebalancedToday: false,
       rebalanceDelta: 0,
@@ -146,8 +176,8 @@ export async function executeRebalance(
       today,
       refMid,
       targetPosition,
-      account,
-      equityJpy,
+      account: allocatedAccount,
+      equityJpy: subEquityJpy,
       currentPosition,
       rebalancedToday: false,
       rebalanceDelta: 0,
@@ -159,22 +189,28 @@ export async function executeRebalance(
   }
 
   if (dryRun) {
-    return await writeState({
-      prisma,
-      asset,
-      today,
-      refMid,
-      targetPosition,
-      account,
-      equityJpy,
-      currentPosition,
+    // Dry-run is side-effect-free: it must NOT upsert ActualPortfolioState,
+    // or running it on a live asset would overwrite that day's real ledger row.
+    // Read prev (read-only) only to report cumulative return.
+    const prev = await prisma.actualPortfolioState.findFirst({
+      where: { asset, date: { lt: today } },
+      orderBy: { date: "desc" },
+    });
+    return {
+      skipped: true,
+      skipReason: `dry_run: would_${side.toLowerCase()}_${sizeStr}`,
+      equityJpy: subEquityJpy,
+      cashJpy: allocatedAccount.jpy,
+      units: allocatedAccount.units,
+      price: refMid,
+      actualPosition: currentPosition,
       rebalancedToday: false,
       rebalanceDelta: 0,
       feeJpy: 0,
       slippageBps: 0,
-      depositJpy,
-      skipReason: `dry_run: would_${side.toLowerCase()}_${sizeStr}`,
-    });
+      cumulativeReturn: computeTwrCumulativeReturn(subEquityJpy, depositJpy, prev),
+      cumulativeFeeJpy: prev?.cumulativeFeeJpy ?? 0,
+    };
   }
 
   let fill: FillResult | null = null;
@@ -316,7 +352,12 @@ export async function executeRebalance(
       ? account.jpy - fill.execUnits * fill.execPrice - fill.feeJpy
       : account.jpy + fill.execUnits * fill.execPrice - fill.feeJpy;
   const postUnits = account.units + signedDelta;
-  const postEquity = postCashJpy + postUnits * refMid;
+  // Re-slice post-trade: total equity is conserved through the trade (peer
+  // holdings unchanged), so recompute this asset's allocated equity from the
+  // new shared JPY + own holdings + unchanged peer value.
+  const postTotalEquity = postCashJpy + postUnits * refMid + peerHoldingsValueJpy;
+  const postSubEquity = postTotalEquity * allocationWeight;
+  const postOwnValue = postUnits * refMid;
 
   const slippageBps =
     ((fill.execPrice - refMid) / refMid) * (side === "BUY" ? 10000 : -10000);
@@ -327,9 +368,9 @@ export async function executeRebalance(
     today,
     refMid,
     targetPosition,
-    account: { jpy: postCashJpy, units: postUnits },
-    equityJpy: postEquity,
-    currentPosition: postEquity > 0 ? (postUnits * refMid) / postEquity : 0,
+    account: { jpy: postSubEquity - postOwnValue, units: postUnits },
+    equityJpy: postSubEquity,
+    currentPosition: postSubEquity > 0 ? postOwnValue / postSubEquity : 0,
     rebalancedToday: true,
     rebalanceDelta: signedDelta,
     feeJpy: fill.feeJpy,
@@ -346,6 +387,28 @@ async function readAccountSnapshot(
   const jpy = assets.find((a) => a.symbol === "JPY")?.amount ?? 0;
   const units = assets.find((a) => a.symbol === asset)?.amount ?? 0;
   return { jpy, units };
+}
+
+/**
+ * JPY value of holdings for every allocation asset OTHER than `ownAsset`,
+ * priced at each peer's ref mid. Used to value the full shared GMO account so
+ * `ownAsset` can size against its allocated slice. Returns 0 for the
+ * single-asset case (allocationAssets = [ownAsset]).
+ */
+async function valuePeerHoldings(
+  client: GmoClient,
+  ownAsset: ActualAsset,
+  allocationAssets: ActualAsset[],
+): Promise<number> {
+  let total = 0;
+  for (const peer of allocationAssets) {
+    if (peer === ownAsset) continue;
+    const ticker = await client.getTicker(SPOT_SYMBOL[peer]);
+    const mid = (ticker.bid + ticker.ask) / 2;
+    const snap = await readAccountSnapshot(client, peer);
+    total += snap.units * mid;
+  }
+  return total;
 }
 
 interface WaitForFillInput {

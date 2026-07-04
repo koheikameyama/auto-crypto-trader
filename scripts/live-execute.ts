@@ -23,6 +23,10 @@ import {
   type ExecutionAdapterOutput,
 } from "../src/live/execution-adapter.js";
 import { checkAlerts } from "../src/live/kill-switch.js";
+import {
+  getAllocationWeight,
+  parseExecutionAssets,
+} from "../src/live/allocator.js";
 import { computeLiveSignal } from "../src/live/signal-computer.js";
 import { fetchMacroDaily } from "../src/data/macro-loader.js";
 import { fetchFundingDaily } from "../src/data/funding-loader.js";
@@ -81,6 +85,15 @@ async function main(): Promise<void> {
       `\n=== Live Execute: ${todayDateStr} (${asset}${dryRun ? ", DRY-RUN" : ""}) ===\n`,
     );
 
+    // Multi-asset allocation: equal weight = 1/N across EXECUTION_ASSETS so
+    // BTC and ETH each rebalance within their slice of the shared JPY pool
+    // (forbidden #6). Single-asset (EXECUTION_ASSETS=BTC) → weight 1.0 = legacy.
+    const allocationAssets = parseExecutionAssets(process.env.EXECUTION_ASSETS);
+    const allocationWeight = getAllocationWeight(asset, allocationAssets);
+    console.log(
+      `Allocation: ${asset} weight ${(allocationWeight * 100).toFixed(1)}% of [${allocationAssets.join(", ")}]`,
+    );
+
     const sig = await computeSignalForAsset(prisma, asset, now);
     console.log(
       `Signal: DXY score ${sig.dxyScore.toFixed(3)}, funding score ${sig.fundingScore.toFixed(3)}, target ${(sig.targetPosition * 100).toFixed(1)}% long`,
@@ -97,6 +110,8 @@ async function main(): Promise<void> {
         rebalanceThreshold,
         makerLimitWaitSec,
         dryRun,
+        allocationWeight,
+        allocationAssets,
       });
     } catch (err) {
       if (isTransientGmoOutage(err)) {
@@ -165,7 +180,11 @@ async function main(): Promise<void> {
 
     const outDir = "reports/live";
     await fs.mkdir(outDir, { recursive: true });
-    const jsonPath = path.join(outDir, `${todayDateStr}-${asset}-actual.json`);
+    // Dry-run writes to a distinct file so it never clobbers the live report.
+    const jsonPath = path.join(
+      outDir,
+      `${todayDateStr}-${asset}-actual${dryRun ? "-dryrun" : ""}.json`,
+    );
     const payload = {
       date: todayDateStr,
       asset,
