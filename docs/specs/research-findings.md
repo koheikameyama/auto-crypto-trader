@@ -639,3 +639,29 @@ BTC で調整した固定 weight (wDxy=0.60, wFunding=0.40) をそのまま ETH 
 - DB: `FundingRate` ETHUSDT 2,340 rows 追加、`WalkForwardRun` 1 row
 - レポート: `reports/walk-forward/scheme-e-eth-*.md` + [round-8-findings.md](round-8-findings.md)
 - 実績工数: 約 1.5h
+
+---
+
+## 18. 追補 — Round 14 (SOL/BNB Cross-Asset、Scheme E の適用範囲を確定)
+
+### 目的
+
+Round 8 の「BTC→ETH で同じ固定 weight が機能」を受け、Scheme E の edge が large-cap 全般か BTC/ETH 固有かを SOL/BNB で判別（固定 weight、backtest only）。
+
+### 結果（FAIL）
+
+| Asset | OOS Sharpe | BH Sharpe | Drop | Beats BH | 判定 |
+|---|---|---|---|---|---|
+| ETH (R8) | 1.026 | 0.899 | -1.9% | YES | PASS |
+| **SOL** | **0.282** | 1.007 | **73.7%** | NO | **FAIL** |
+| **BNB** | **0.394** | 1.050 | **55.8%** | NO | **FAIL** |
+
+### 教訓
+
+- **Scheme E の edge は BTC/ETH の large-cap に限定**。SOL/BNB は FTX 破綻・取引所規制等の **idiosyncratic shock が支配的**で、DXY（マクロ流動性）+ Funding（perp sentiment）では捕捉不能
+- drop 55〜74% は BTC/ETH（15%/-1.9%）と対照的 → signal と資産の関係が非定常
+- **「Scheme E = 汎用 crypto 戦略」ではなく「マクロ感応度の高い大型資産の戦略」**という境界確認。有益な negative result
+- alt exposure を取るなら横展開ではなく BTC.D overlay（Round 13）の方が筋
+- 運用中の BTC/ETH baseline には一切影響なし（backtest only、core weight 不変）
+
+詳細: [round-14-findings.md](round-14-findings.md)、Linear KOH-513

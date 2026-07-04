@@ -38,6 +38,10 @@ function toBinanceSymbol(asset: AssetSymbol): string {
       return "BTCUSDT";
     case "ETH-USD":
       return "ETHUSDT";
+    case "SOL-USD":
+      return "SOLUSDT";
+    case "BNB-USD":
+      return "BNBUSDT";
     default:
       throw new Error(`Unsupported asset for Binance: ${asset}`);
   }
@@ -49,6 +53,10 @@ function toCoingeckoId(asset: AssetSymbol): string {
       return "bitcoin";
     case "ETH-USD":
       return "ethereum";
+    case "SOL-USD":
+      return "solana";
+    case "BNB-USD":
+      return "binancecoin";
     default:
       throw new Error(`Unsupported asset for CoinGecko: ${asset}`);
   }
