@@ -16,14 +16,11 @@ export const DEFAULT_KILL_SWITCH: KillSwitchConfig = {
 };
 
 /**
- * Pre-execution guard. Returns `{ ok: false, reason }` if any stop condition
- * is met; caller must skip the actual execution for the day.
- *
- * Conditions:
- *   1. Last N consecutive OrderLog entries for this asset all `status=failed`
- *   2. Latest ActualPortfolioState's cumulativeReturn ≤ -maxDrawdown
+ * Phase-1 pre-execution guard (DB-only, runs BEFORE any exchange call so a dead
+ * API is not hammered further). Trips when the last N consecutive OrderLog
+ * entries for this asset are all `status=failed`.
  */
-export async function checkKillSwitch(
+export async function checkOrderFailureKill(
   prisma: PrismaClient,
   asset: string,
   config: KillSwitchConfig = DEFAULT_KILL_SWITCH,
@@ -42,18 +39,47 @@ export async function checkKillSwitch(
       reason: `consecutive ${config.maxConsecutiveFailures} order failures`,
     };
   }
+  return { ok: true };
+}
 
-  const latest = await prisma.actualPortfolioState.findFirst({
-    where: { asset },
-    orderBy: { date: "desc" },
+/**
+ * Phase-2 drawdown guard. Halts when total account equity has fallen
+ * ≥ maxDrawdown below total deposited capital.
+ *
+ * Computed on the WHOLE account (all allocation assets share one JPY pool),
+ * NOT per-asset. A multi-asset reallocation shifts capital between assets'
+ * equity slices without any real loss, so a per-asset equity/return would
+ * false-trip. Concretely: the 2026-07 ETH rollout halved BTC's slice
+ * (¥93,244 → ¥46,849) as capital moved to ETH; the old per-asset cumulative
+ * return read -52.6% and froze BTC for days with zero real portfolio loss.
+ *
+ * `portfolioEquityJpy` must come from the live account snapshot (single source
+ * of truth), not from summing per-asset ActualPortfolioState rows — those
+ * double-count on skip days (one asset carries a stale full-account equity
+ * while another books its slice).
+ */
+export async function checkDrawdownKill(
+  prisma: PrismaClient,
+  portfolioEquityJpy: number,
+  config: KillSwitchConfig = DEFAULT_KILL_SWITCH,
+): Promise<KillSwitchDecision> {
+  // A non-positive equity means the snapshot could not be valued (transient
+  // read glitch) — don't trip on it; let the order flow surface the failure.
+  if (portfolioEquityJpy <= 0) return { ok: true };
+
+  const agg = await prisma.depositEvent.aggregate({
+    _sum: { amountJpy: true },
   });
-  if (latest && latest.cumulativeReturn <= -config.maxDrawdown) {
+  const totalDeposits = agg._sum.amountJpy ?? 0;
+  if (totalDeposits <= 0) return { ok: true };
+
+  const drawdown = portfolioEquityJpy / totalDeposits - 1;
+  if (drawdown <= -config.maxDrawdown) {
     return {
       ok: false,
-      reason: `drawdown ${(latest.cumulativeReturn * 100).toFixed(1)}% ≤ -${(config.maxDrawdown * 100).toFixed(0)}%`,
+      reason: `portfolio drawdown ${(drawdown * 100).toFixed(1)}% ≤ -${(config.maxDrawdown * 100).toFixed(0)}%`,
     };
   }
-
   return { ok: true };
 }
 

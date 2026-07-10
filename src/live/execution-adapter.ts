@@ -1,6 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 import { GmoApiError, type GmoClient, type GmoSymbol } from "./gmo-client.js";
-import { checkKillSwitch, DEFAULT_KILL_SWITCH } from "./kill-switch.js";
+import {
+  checkOrderFailureKill,
+  checkDrawdownKill,
+  DEFAULT_KILL_SWITCH,
+} from "./kill-switch.js";
 
 /**
  * Execute one day's rebalance on GMO Coin spot.
@@ -108,14 +112,20 @@ export async function executeRebalance(
 
   const depositJpy = await fetchTodayDeposit(prisma, asset, today);
 
-  const killSwitch = await checkKillSwitch(prisma, asset, DEFAULT_KILL_SWITCH);
-  if (!killSwitch.ok) {
+  // Phase-1 kill-switch: consecutive order failures. DB-only, so it runs before
+  // any exchange call and a dead API is not hammered further.
+  const failureKill = await checkOrderFailureKill(
+    prisma,
+    asset,
+    DEFAULT_KILL_SWITCH,
+  );
+  if (!failureKill.ok) {
     return await recordStateUnchanged(
       prisma,
       asset,
       today,
       targetPosition,
-      `kill_switch: ${killSwitch.reason}`,
+      `kill_switch: ${failureKill.reason}`,
     );
   }
 
@@ -133,6 +143,25 @@ export async function executeRebalance(
     allocationAssets,
   );
   const totalEquityJpy = account.jpy + account.units * refMid + peerHoldingsValueJpy;
+
+  // Phase-2 kill-switch: portfolio-level drawdown on the live account snapshot
+  // (single source of truth). Must use the whole-account equity, not per-asset
+  // rows/return, or a multi-asset reallocation false-trips it (see kill-switch.ts).
+  const drawdownKill = await checkDrawdownKill(
+    prisma,
+    totalEquityJpy,
+    DEFAULT_KILL_SWITCH,
+  );
+  if (!drawdownKill.ok) {
+    return await recordStateUnchanged(
+      prisma,
+      asset,
+      today,
+      targetPosition,
+      `kill_switch: ${drawdownKill.reason}`,
+    );
+  }
+
   const subEquityJpy = totalEquityJpy * allocationWeight;
   const currentValue = account.units * refMid;
   const currentPosition = subEquityJpy > 0 ? currentValue / subEquityJpy : 0;
