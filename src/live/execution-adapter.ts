@@ -184,6 +184,7 @@ export async function executeRebalance(
       targetPosition,
       account: allocatedAccount,
       equityJpy: subEquityJpy,
+      totalEquityJpy,
       currentPosition,
       rebalancedToday: false,
       rebalanceDelta: 0,
@@ -207,6 +208,7 @@ export async function executeRebalance(
       targetPosition,
       account: allocatedAccount,
       equityJpy: subEquityJpy,
+      totalEquityJpy,
       currentPosition,
       rebalancedToday: false,
       rebalanceDelta: 0,
@@ -237,7 +239,12 @@ export async function executeRebalance(
       rebalanceDelta: 0,
       feeJpy: 0,
       slippageBps: 0,
-      cumulativeReturn: computeTwrCumulativeReturn(subEquityJpy, depositJpy, prev),
+      cumulativeReturn: await computePortfolioCumret(
+        prisma,
+        asset,
+        today,
+        totalEquityJpy,
+      ),
       cumulativeFeeJpy: prev?.cumulativeFeeJpy ?? 0,
     };
   }
@@ -399,6 +406,7 @@ export async function executeRebalance(
     targetPosition,
     account: { jpy: postSubEquity - postOwnValue, units: postUnits },
     equityJpy: postSubEquity,
+    totalEquityJpy: postTotalEquity,
     currentPosition: postSubEquity > 0 ? postOwnValue / postSubEquity : 0,
     rebalancedToday: true,
     rebalanceDelta: signedDelta,
@@ -541,6 +549,8 @@ interface WriteStateInput {
   targetPosition: number;
   account: AccountSnapshot;
   equityJpy: number;
+  /** Whole-account equity (all allocation assets) — used for portfolio cumret. */
+  totalEquityJpy: number;
   currentPosition: number;
   rebalancedToday: boolean;
   rebalanceDelta: number;
@@ -569,23 +579,53 @@ async function fetchTodayDeposit(
 }
 
 /**
- * Time-weighted cumulative return that excludes capital injections.
+ * Portfolio-level time-weighted cumulative return, neutralizing BOTH external
+ * deposits and internal inter-asset reallocation.
  *
- *   dailyReturn = (equity - deposit - prevEquity) / prevEquity
+ * The per-asset equity slice is `weight × totalAccountEquity`, so when the
+ * allocation weight changes (e.g. BTC-only → BTC+ETH) the slice jumps with no
+ * real P&L. Measuring the daily return on the WHOLE account rather than the
+ * slice makes the reallocation invisible — a transfer between two assets'
+ * slices nets to zero at the account level. Every asset's row therefore
+ * carries the same portfolio cumret. Without this, the 2026-07 ETH rollout
+ * read a spurious -50% one-day loss on BTC (its slice halved as capital moved
+ * to ETH) and corrupted the series.
+ *
+ *   dailyReturn = (totalEquity - portfolioDeposit - prevTotalEquity) / prevTotalEquity
  *   cumret      = (1 + prevCumret) * (1 + dailyReturn) - 1
  *
- * The deposit term cancels the cash-add so a top-up never registers as profit.
- * If no prev row exists, this is the first day — treat depositJpy as the seed
- * capital and set dailyReturn = 0 so cumret starts at 0.
+ * prevTotalEquity is reconstructed from the previous row's slice and the number
+ * of assets sharing the account that day (equal-weight ⇒ weight = 1/N). With a
+ * single asset this reduces exactly to the legacy full-capital TWR.
  */
-function computeTwrCumulativeReturn(
-  equityJpy: number,
-  depositJpy: number,
-  prev: { equityJpy: number; cumulativeReturn: number } | null,
-): number {
+async function computePortfolioCumret(
+  prisma: PrismaClient,
+  asset: string,
+  today: Date,
+  totalEquityJpy: number,
+): Promise<number> {
+  const prev = await prisma.actualPortfolioState.findFirst({
+    where: { asset, date: { lt: today } },
+    orderBy: { date: "desc" },
+  });
   if (!prev || prev.equityJpy <= 0) return 0;
+
+  const prevAssetCount = await prisma.actualPortfolioState.count({
+    where: { date: prev.date },
+  });
+  const prevWeight = prevAssetCount > 0 ? 1 / prevAssetCount : 1;
+  const prevTotalEquity = prev.equityJpy / prevWeight;
+
+  // Deposits land in the shared JPY pool, so a top-up on any asset is a
+  // portfolio-level injection that must be netted out of the return.
+  const depAgg = await prisma.depositEvent.aggregate({
+    _sum: { amountJpy: true },
+    where: { date: today },
+  });
+  const portfolioDeposit = depAgg._sum.amountJpy ?? 0;
+
   const dailyReturn =
-    (equityJpy - depositJpy - prev.equityJpy) / prev.equityJpy;
+    (totalEquityJpy - portfolioDeposit - prevTotalEquity) / prevTotalEquity;
   return (1 + prev.cumulativeReturn) * (1 + dailyReturn) - 1;
 }
 
@@ -600,6 +640,7 @@ async function writeState(
     targetPosition,
     account,
     equityJpy,
+    totalEquityJpy,
     currentPosition,
     rebalancedToday,
     rebalanceDelta,
@@ -613,10 +654,11 @@ async function writeState(
     where: { asset, date: { lt: today } },
     orderBy: { date: "desc" },
   });
-  const cumulativeReturn = computeTwrCumulativeReturn(
-    equityJpy,
-    depositJpy,
-    prev,
+  const cumulativeReturn = await computePortfolioCumret(
+    prisma,
+    asset,
+    today,
+    totalEquityJpy,
   );
   const cumulativeFeeJpy = (prev?.cumulativeFeeJpy ?? 0) + feeJpy;
 
