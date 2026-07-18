@@ -233,3 +233,90 @@ model Trade {
   @@index([backtestRunId])
   @@index([assetId, entryDate])
 }
+
+// ==============================
+// Phase 3: Funding Arb Models
+// ==============================
+
+// Detailed funding rate (every 8 hours)
+model FundingRateDetail {
+  id        String   @id @default(cuid())
+  symbol    String   // BTCUSDT, ETHUSDT
+  timestamp DateTime // UTC timestamp (00:00, 08:00, 16:00)
+  rate      Float    // Funding rate (e.g., 0.0001)
+  markPrice Float?   // Mark price at funding time
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, timestamp])
+  @@index([symbol, timestamp])
+}
+
+// Spot price (GMO Coin)
+model SpotPrice {
+  id        String   @id @default(cuid())
+  symbol    String   // BTC, ETH
+  timestamp DateTime // UTC
+  price     Float    // JPY price
+  volume24h Float?   // Optional: 24h volume
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, timestamp])
+  @@index([symbol, timestamp])
+}
+
+// Perp price (Binance)
+model PerpPrice {
+  id        String   @id @default(cuid())
+  symbol    String   // BTCUSDT, ETHUSDT
+  timestamp DateTime // UTC
+  price     Float    // USDT price
+  markPrice Float?   // Mark price
+  volume24h Float?   // Optional: 24h volume
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, timestamp])
+  @@index([symbol, timestamp])
+}
+
+// Funding arb portfolio state
+model FundingArbPortfolio {
+  id                   String   @id @default(cuid())
+  asset                String   // BTC, ETH
+  date                 DateTime // JST date
+  spotPositionUnits    Float    // Spot position (e.g., 0.01 BTC)
+  perpPositionUnits    Float    // Perp position (e.g., -0.01 BTC, negative for short)
+  spotValueJpy         Float    // Spot value in JPY
+  perpValueJpy         Float    // Perp value in JPY (absolute)
+  netDeltaJpy          Float    // Should be ~0 for delta-neutral
+  fundingEarnedJpy     Float    // Funding earned today
+  realizedPnlJpy       Float    // Realized P&L from rebalancing
+  unrealizedPnlJpy     Float    // Unrealized P&L
+  totalEquityJpy       Float    // Total equity
+  marginRatioPercent   Float?   // Margin ratio on Binance
+  liquidationPrice     Float?   // Liquidation price for perp
+  rebalancedToday      Boolean  @default(false)
+  notes                String?
+  createdAt            DateTime @default(now())
+
+  @@unique([asset, date])
+  @@index([asset, date])
+}
+
+// Arbitrage opportunity log
+model ArbOpportunity {
+  id               String   @id @default(cuid())
+  symbol           String   // BTC, ETH
+  timestamp        DateTime // UTC
+  fundingRate      Float    // Funding rate at this time
+  spotPrice        Float    // Spot price (JPY)
+  perpPrice        Float    // Perp price (USDT)
+  spreadPercent    Float    // (perp - spot) / spot * 100
+  annualizedReturn Float    // Estimated annualized return (%)
+  thresholdMet     Boolean  // Whether it met our entry threshold
+  actionTaken      String?  // "entered", "held", "exited", null
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@index([symbol, timestamp])
+  @@index([thresholdMet, timestamp])
+}
