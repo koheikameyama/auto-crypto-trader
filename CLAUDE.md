@@ -68,6 +68,8 @@ BTC/ETH の自動取引システム。2つの独立戦略を運用。
 - [docs/specs/round-8-findings.md](docs/specs/round-8-findings.md) — Robustness 検証
 - [docs/specs/live-operations.md](docs/specs/live-operations.md) — Phase 1 / 1.5 運用
 - [docs/plans/2026-04-24-round-11-phase2-execution.md](docs/plans/2026-04-24-round-11-phase2-execution.md) — Phase 2 実装計画
+- [docs/plans/2026-07-28-phase2-scale-up-criteria.md](docs/plans/2026-07-28-phase2-scale-up-criteria.md) — 増額判断条件（¥100k → ¥300k → ¥1M）
+- [docs/plans/2026-07-28-round-15-short-extension.md](docs/plans/2026-07-28-round-15-short-extension.md) — Round 15 ショート拡張の backtest 計画（未着手）
 
 ### Phase 3 (Alternative Strategies)
 - [docs/specs/phase3-funding-arb-analysis.md](docs/specs/phase3-funding-arb-analysis.md) — Funding Rate Arbitrage 分析（ON HOLD）
