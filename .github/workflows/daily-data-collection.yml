@@ -65,6 +65,24 @@ jobs:
       - name: Run data collection
         run: npx tsx scripts/daily-data-collection.ts
 
+      # Phase 3 (funding arb) is ON HOLD; this only speaks up when the funding
+      # 3d MA crosses the early-warning / re-entry line, so a quiet run is the
+      # normal case.
+      - name: Check Phase 3 funding re-entry trigger
+        run: npx tsx scripts/check-funding-trigger.ts --alert-only | tee /tmp/funding-trigger.txt
+
+      - name: Slack notify funding trigger
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          if [ ! -s /tmp/funding-trigger.txt ]; then
+            echo "no funding trigger, skipping notify"
+            exit 0
+          fi
+          jq -nc --rawfile text /tmp/funding-trigger.txt '{text: $text}' > /tmp/slack-payload.json
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data @/tmp/slack-payload.json \
+            "$SLACK_WEBHOOK_URL"
+
       - name: Stop sidecar
         if: always()
         run: |
