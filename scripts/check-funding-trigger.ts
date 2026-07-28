@@ -19,6 +19,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import dayjs from "dayjs";
+import { monoTable } from "../src/lib/text-table.js";
 
 /** Funding is paid 3x per day. */
 const INTERVALS_PER_YEAR = 3 * 365;
@@ -104,25 +105,31 @@ async function main(): Promise<void> {
       ? `🚨 *Phase 3 再開検討ライン到達* — funding ${window} 日移動平均が年率 ${(REENTRY_ANNUAL * 100).toFixed(0)}% 超`
       : triggered.length > 0
         ? `⚠️ *Phase 3 早期警戒ライン到達* — funding ${window} 日移動平均が年率 ${(EARLY_WARN_ANNUAL * 100).toFixed(0)}% 超`
-        : `Funding trigger check — ${window} 日移動平均（閾値未達）`;
+        : `*Funding trigger check* — ${window} 日移動平均（閾値未達）`;
 
     console.log(header);
-    console.log("");
-    console.log(`| Symbol | ${window}d MA (%/8h) | 年率換算 | 判定 | 最新データ |`);
-    console.log(`|---|---|---|---|---|`);
-    for (const s of statuses) {
-      const mark =
-        s.level === "reentry" ? "🚨 再開検討" : s.level === "early" ? "⚠️ 早期警戒" : "— 未達";
-      const stale = s.samples < window ? `${s.latestDate} (${s.samples}/${window}d)` : s.latestDate;
-      console.log(
-        `| ${s.symbol} | ${(s.ma * 100).toFixed(4)}% | ${(s.annual * 100).toFixed(2)}% | ${mark} | ${stale} |`,
-      );
-    }
+
+    // Slack renders neither markdown tables nor headings, so the numbers go into
+    // a code fence where monospace keeps the columns aligned.
+    const rows = statuses.map((s) => [
+      s.symbol,
+      `${(s.ma * 100).toFixed(4)}%`,
+      `${(s.annual * 100).toFixed(2)}%`,
+      s.level === "reentry" ? "🚨 再開検討" : s.level === "early" ? "⚠️ 早期警戒" : "— 未達",
+      s.samples < window ? `${s.latestDate} (${s.samples}/${window}d)` : s.latestDate,
+    ]);
+    console.log("```");
+    console.log(monoTable([`Symbol`, `${window}d MA`, `年率`, `判定`, `最新`], rows));
+    console.log("```");
+
+    console.log(
+      `_基準: 早期警戒 年率 ${(EARLY_WARN_ANNUAL * 100).toFixed(0)}% / 再開検討 年率 ${(REENTRY_ANNUAL * 100).toFixed(0)}%_`,
+    );
 
     if (triggered.length > 0) {
       console.log("");
       console.log(
-        `次アクション: \`docs/specs/phase3-funding-arb-analysis.md\` の再開条件を確認し、` +
+        `*次アクション:* \`docs/specs/phase3-funding-arb-analysis.md\` の再開条件を確認し、` +
           `backtest（\`scripts/backtest-funding-arb.ts\`）を実行。` +
           `Binance 署名付き API の -2015 ブロッカーが未解消な点に注意。`,
       );

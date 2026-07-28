@@ -45,17 +45,15 @@ jobs:
           if [ -n "${{ github.event.inputs.month }}" ]; then
             MONTH_ARG="--month=${{ github.event.inputs.month }}"
           fi
-          npx tsx scripts/monthly-summary.ts $MONTH_ARG | tee /tmp/monthly-summary.txt
+          # Markdown to the run log (readable in the Actions UI), Slack mrkdwn to
+          # the file that gets posted — Slack renders neither tables nor headings.
+          npx tsx scripts/monthly-summary.ts $MONTH_ARG
+          npx tsx scripts/monthly-summary.ts $MONTH_ARG --format=slack > /tmp/monthly-summary-slack.txt
 
       - name: Send Slack notification
         if: success() && env.SLACK_WEBHOOK_URL != ''
         run: |
-          {
-            echo "🗓️ *Monthly Operations Summary*"
-            echo ""
-            cat /tmp/monthly-summary.txt
-          } > /tmp/slack-text.txt
-          jq -nc --rawfile text /tmp/slack-text.txt '{text: $text}' > /tmp/slack-payload.json
+          jq -nc --rawfile text /tmp/monthly-summary-slack.txt '{text: $text}' > /tmp/slack-payload.json
           curl -sS -X POST -H 'Content-Type: application/json' \
             --data @/tmp/slack-payload.json \
             "$SLACK_WEBHOOK_URL"

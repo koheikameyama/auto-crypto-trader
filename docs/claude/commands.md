@@ -22,8 +22,9 @@ npx tsx scripts/live-execute.ts --asset=BTC --dry-run
 npx tsx scripts/compare-dashboard.ts --asset=BTC --days=14
 
 # 月次サマリ（BH 対比アルファ / 資本稼働 / 執行健全性 / virtual 追随）
-npx tsx scripts/monthly-summary.ts               # 前月
+npx tsx scripts/monthly-summary.ts               # 前月、markdown
 npx tsx scripts/monthly-summary.ts --month=2026-07
+npx tsx scripts/monthly-summary.ts --format=slack  # Slack mrkdwn（投稿前プレビュー）
 
 # Phase 3 funding 再開トリガー確認（--alert-only は閾値超え時のみ出力）
 npx tsx scripts/check-funding-trigger.ts
