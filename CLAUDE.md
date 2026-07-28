@@ -41,7 +41,7 @@ BTC/ETH の自動取引システム。2つの独立戦略を運用。
 - 📈 改善トレンドあり: BTC funding が正の割合 全期間60% → 直近30日97% → 直近7日100%
 - 📋 再検討条件: 3日移動平均が年率15-20%相当（0.0137〜0.0183%/8h）で継続したら再開
 - ⚠️ 早期警戒ライン: 3日移動平均 > **0.0091%/8h**（年率10%）に到達したら backtest を先行実行
-- 🚧 **ブロッカー**: Binance 署名付き API が -2015 で失敗。perp ショート leg の実行可否が未確認
+- 🚧 **ブロッカー（2026-07-18 調査）**: Binance 署名付き API は日本から到達可（spot 実証済）だが、perp 執行に2点の壁 — ①Futures 口座未開設（先物権限の項目が出ない）②取引権限に IP 制限必須で GitHub Actions と非互換。再開時に設計変更（固定IP / 代替取引所 / GMO 証拠金）が必要
 - 📄 詳細: [docs/specs/phase3-funding-arb-analysis.md](docs/specs/phase3-funding-arb-analysis.md)
 
 ### Phase 3.1: Market Neutral / BTC-ETH Pair Trading（⏸️ ON HOLD）

@@ -131,24 +131,57 @@ Binance API がアカウントで利用可能になったため、funding rate �
 
 BTC は既に年率8.33%（2026-07-18 時点）で、この警戒ラインの目前にある。
 
-### Binance 実発注の可否は未確認（ブロッカー）
+### Binance 実発注の可否 — 調査結果（2026-07-18）
 
-read-only smoke test（`scripts/smoke-test-binance.ts`）の結果:
+read-only smoke test（`scripts/smoke-test-binance.ts`）+ 個別エンドポイント診断で切り分けた結論:
+
+**Binance の署名付き API は日本から到達できる（spot で実証済み）。ただし perp 執行には2つのブロッカーがある。**
+
+#### 判明した事実
 
 | チェック | 結果 |
 |---|---|
-| public: ping / serverTime | ✅ OK（skew 73ms） |
-| public: premiumIndex | ✅ OK |
-| **private: /fapi/v2/balance** | ❌ **401 `-2015 Invalid API-key, IP, or permissions`** |
+| public: ping / premiumIndex | ✅ OK |
+| private: `/sapi/v1/account/apiRestrictions`（権限ビット） | ✅ 200 — key は有効 |
+| private: `/api/v3/account`（spot） | ✅ 200 — **署名付き spot リクエストが通る** |
+| private: `/fapi/v2/balance`（futures） | ❌ 401 `-2015` |
 
-**public API は通るが、署名付きリクエストが通らない。** 原因は以下のいずれかで、API 側からは切り分け不能:
+API key の権限ビット実測値:
 
-1. API key に Futures 権限が付いていない（Binance 既定 OFF）
-2. key の IP 制限に現在の IP が含まれていない
-3. 地域制限 — 日本アカウントでは futures 自体が利用不可
+```
+ipRestrict:                 true    ← 取引権限を付けると自動的に必須化される
+enableReading:              true
+enableSpotAndMarginTrading: true    ← 一時的に有効化して spot 疎通を確認（不要なので OFF 推奨）
+enableFutures:              false   ← ★ ブロッカー1
+enableWithdrawals:          false   ← 良い状態（維持すること）
+```
 
-**3 だった場合、perp ショートを Binance で執行する現設計は成立しない**（代替取引所の検討が必要）。
-funding rate が再開条件に到達する前に、Binance 管理画面で 1/2 を確認しておくこと。
+#### ブロッカー1: Futures アカウント未開設
+
+API 管理画面（API制限セクション）に **「先物取引を有効にする」項目自体が存在しない**。
+表示されるのは「読み込み / 現物・証拠金 / 出金 / 予測取引 / ユニバーサル振替 / シンボルホワイトリスト」の6項目のみ。
+（「予測取引」は Futures ではない別物）
+
+→ **USDⓈ-M Futures 口座が未開設**のため、Binance が Futures 権限のチェックボックスを出していない。
+perp ショートを建てるには、先にデリバティブ口座の開設（適性クイズ）が必要。
+**日本アカウントで開設可能かは未確認**（開設を進めてみないと分からない）。
+
+#### ブロッカー2: 取引権限には IP 制限が必須 → GitHub Actions と非互換
+
+取引権限（spot/futures）を有効にすると、Binance は `ipRestrict=true`（IP ホワイトリスト）を強制する。
+API 管理画面にも「IP 無制限 + 読み取り以外の権限有効 の場合、この API キーは削除される」と明記されている。
+
+→ **GitHub Actions は実行ごとに IP が変わる**ため、IP ホワイトリスト方式と構造的に非互換。
+現在の実行環境（GHA）からは Binance の取引 API を叩けない。
+
+#### 再開時に必要な設計変更（いずれか）
+
+1. 固定 IP の実行環境に移す（VPS / Railway 常駐プロセス等）
+2. 代替 perp 取引所（Bybit / OKX）
+3. GMO の証拠金取引でショート（同一取引所完結、IP 問題なし）
+
+いずれも Phase 3 のアーキテクチャ変更を伴う。ON HOLD 中のため、
+funding rate が再開条件に近づいた時点で判断すればよい（現時点で着手不要）。
 
 ---
 
