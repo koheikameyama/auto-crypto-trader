@@ -364,7 +364,18 @@ export async function executeRebalance(
   }
 
   if (!fill) {
-    throw new Error(`order placed but no fill detected for ${asset}`);
+    // Neither the maker LIMIT nor the MARKET fallback filled. Rather than throw
+    // (which would leave this asset with NO row for the day), carry the previous
+    // state forward. A missing row makes the day's asset count asymmetric, which
+    // corrupts the next day's portfolio cumret — see 2026-07-29 ETH no-fill →
+    // 2026-07-30 BTC +93% spike (KOH-604). Every live asset must write a row.
+    return await recordStateUnchanged(
+      prisma,
+      asset,
+      today,
+      targetPosition,
+      `no_fill: maker+market unfilled for ${side} ${sizeStr}`,
+    );
   }
 
   await logOrder(prisma, {
@@ -594,8 +605,11 @@ async function fetchTodayDeposit(
  *   dailyReturn = (totalEquity - portfolioDeposit - prevTotalEquity) / prevTotalEquity
  *   cumret      = (1 + prevCumret) * (1 + dailyReturn) - 1
  *
- * prevTotalEquity is reconstructed from the previous row's slice and the number
- * of assets sharing the account that day (equal-weight ⇒ weight = 1/N). With a
+ * prevTotalEquity is the SUM of every asset's slice on the previous state date —
+ * the whole account. Summing the actual rows (rather than dividing one slice by
+ * an assumed equal weight 1/N) is robust to a day where one asset has no row:
+ * if 2026-07-29 recorded BTC only, dividing BTC's slice by 1/1 under-counts the
+ * account by half and spikes the next day's return (the KOH-604 bug). With a
  * single asset this reduces exactly to the legacy full-capital TWR.
  */
 async function computePortfolioCumret(
@@ -610,11 +624,13 @@ async function computePortfolioCumret(
   });
   if (!prev || prev.equityJpy <= 0) return 0;
 
-  const prevAssetCount = await prisma.actualPortfolioState.count({
+  // Reconstruct the whole-account equity as the sum of every asset slice on the
+  // previous state date. Robust to asset-count asymmetry between days.
+  const prevRows = await prisma.actualPortfolioState.findMany({
     where: { date: prev.date },
   });
-  const prevWeight = prevAssetCount > 0 ? 1 / prevAssetCount : 1;
-  const prevTotalEquity = prev.equityJpy / prevWeight;
+  const prevTotalEquity = prevRows.reduce((s, r) => s + r.equityJpy, 0);
+  if (prevTotalEquity <= 0) return 0;
 
   // Deposits land in the shared JPY pool, so a top-up on any asset is a
   // portfolio-level injection that must be netted out of the return.
