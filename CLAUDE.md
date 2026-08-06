@@ -33,6 +33,8 @@ BTC/ETH の自動取引システム。2つの独立戦略を運用。
 - ✅ **Phase 2.2 Small: ¥100,000 actual execution（2026-05-12 開始、2026-07-11 判定 PASS = 本運用化）**
 - ⏭️ Phase 2.3 Seed (¥1M) は skip — 資金準備上の都合で Phase 2.2 完了 = 本運用化と判断（2026-05-14 決定）
 - 🎯 **本運用中**: ¥100,000 規模で継続。BTC+ETH multi-asset 配分。増額は利益積み増しで段階的に検討
+- ✅ **ETH 1ヶ月再評価 PASS（2026-08-06、KOH-566）**: window 乖離 -0.73pp / 最大 1.19pp、maker fill 81.8%、effective fee +0.215bps。ETH multi-asset 継続。詳細: [docs/plans/2026-08-06-koh-566-eth-reevaluation.md](docs/plans/2026-08-06-koh-566-eth-reevaluation.md)
+- ⚠️ 別件: BTC actual の `cumulativeReturn` が 2026-07-30 に +93% へ跳ねる異常（equity は正常）。別タスクで調査・backfill 予定
 
 ### Phase 3.0: Funding Rate Arbitrage（⏸️ ON HOLD）
 - ✅ **Setup & Design**（完了）— 分析の結果、**一旦保留**と判断
