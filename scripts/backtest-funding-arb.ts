@@ -1,5 +1,11 @@
 /**
  * Backtest Funding Rate Arbitrage Strategy
+ *
+ * グリッドは年率基準（2026-07-18 訂正）に準拠:
+ * - entry 閾値: 年率 5〜20% 相当（0.0046〜0.0183%/8h）
+ *   ※ 旧グリッド 0.05〜0.3%/8h は年率 55〜329% 相当で一度も発火しない（KOH-641）
+ * - round-trip コスト控除: 0.10%（楽観: GMO maker + Binance taker 往復）/ 0.20%（保守: スプレッド込み）
+ * - 対象: BTCUSDT / ETHUSDT、全期間 + 直近90日
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -7,94 +13,98 @@ import { FundingArbEngine, BacktestResult } from '../src/backtest/funding-arb-en
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Running Funding Rate Arbitrage Backtest...\n');
+// entry: 年率 5 / 7.5 / 10 / 12.5 / 15 / 20% 相当（%/8h）
+const ENTRY_THRESHOLDS = [0.000046, 0.000068, 0.000091, 0.000114, 0.000137, 0.000183];
+// exit: 年率 -5 / 0 / 2.5 / 5% 相当
+const EXIT_THRESHOLDS = [-0.000046, 0, 0.000023, 0.000046];
+const AVG_DAYS_LIST = [3, 5, 7];
+const INITIAL_CAPITAL = 100000; // ¥100,000
+const ROUND_TRIP_COSTS = [0.1, 0.2]; // % of capital per trade
 
-  // Load funding rate data
-  console.log('Loading BTCUSDT funding rates from DB...');
+const annualPct = (r8h: number) => r8h * 3 * 365 * 100;
+
+interface NetResult {
+  result: BacktestResult;
+  netAnnualized: number[]; // ROUND_TRIP_COSTS と同順
+}
+
+async function runGrid(symbol: string, label: string, since?: Date): Promise<void> {
   const fundingRates = await prisma.fundingRateDetail.findMany({
-    where: { symbol: 'BTCUSDT' },
+    where: { symbol, ...(since ? { timestamp: { gte: since } } : {}) },
     orderBy: { timestamp: 'asc' },
-    select: {
-      timestamp: true,
-      rate: true,
-    },
+    select: { timestamp: true, rate: true },
   });
 
-  console.log(`Loaded ${fundingRates.length} records\n`);
+  const days = fundingRates.length / 3; // 8時間ごと3期間/日
+  console.log(`\n${'='.repeat(100)}`);
+  console.log(`${symbol} — ${label} (${fundingRates.length} periods, ${days.toFixed(0)} days)`);
+  console.log('='.repeat(100));
 
-  // Define parameter grid
-  const entryThresholds = [0.0005, 0.001, 0.0015, 0.002, 0.0025, 0.003]; // 0.05% ~ 0.3%
-  const exitThresholds = [-0.001, 0.0, 0.0005, 0.001]; // -0.1% ~ 0.1%
-  const avgDaysList = [3, 5, 7]; // 3, 5, 7 days
+  if (fundingRates.length === 0) {
+    console.log('  No funding rate data. Run scripts/backfill-funding-rates.ts first.');
+    return;
+  }
 
-  console.log('Parameter Grid:');
-  console.log(`  Entry Thresholds: ${entryThresholds.map(t => (t * 100).toFixed(2) + '%').join(', ')}`);
-  console.log(`  Exit Thresholds: ${exitThresholds.map(t => (t * 100).toFixed(2) + '%').join(', ')}`);
-  console.log(`  Avg Days: ${avgDaysList.join(', ')}`);
-  console.log(`  Total Combinations: ${entryThresholds.length * exitThresholds.length * avgDaysList.length}\n`);
-
-  // Run grid search
-  console.log('Running grid search...\n');
   const engine = new FundingArbEngine();
   const results = engine.gridSearch(
     fundingRates,
-    entryThresholds,
-    exitThresholds,
-    avgDaysList,
-    100000 // Initial capital: ¥100,000
+    ENTRY_THRESHOLDS,
+    EXIT_THRESHOLDS,
+    AVG_DAYS_LIST,
+    INITIAL_CAPITAL
   );
 
-  // Sort by Sharpe ratio (descending)
-  results.sort((a, b) => b.sharpeRatio - a.sharpeRatio);
+  // コスト控除後のネット年率で評価（保守コストでソート）
+  const netResults: NetResult[] = results.map((result) => ({
+    result,
+    netAnnualized: ROUND_TRIP_COSTS.map((cost) => {
+      const netTotal = result.totalReturn - result.totalTrades * cost;
+      return (netTotal / days) * 365;
+    }),
+  }));
+  netResults.sort((a, b) => b.netAnnualized[1] - a.netAnnualized[1]);
 
-  // Display top 10 results
-  console.log('='.repeat(100));
-  console.log('TOP 10 PARAMETER COMBINATIONS (sorted by Sharpe Ratio)');
-  console.log('='.repeat(100));
-
-  for (let i = 0; i < Math.min(10, results.length); i++) {
-    const r = results[i];
-    console.log(`\n#${i + 1}`);
-    console.log(`  Parameters:`);
-    console.log(`    Entry: ${r.params.avgDays}-day avg > ${(r.params.entryThreshold * 100).toFixed(3)}%`);
-    console.log(`    Exit:  ${r.params.avgDays}-day avg < ${(r.params.exitThreshold * 100).toFixed(3)}%`);
-    console.log(`  Performance:`);
-    console.log(`    Sharpe Ratio:      ${r.sharpeRatio.toFixed(2)}`);
-    console.log(`    Calmar Ratio:      ${r.calmarRatio.toFixed(2)}`);
-    console.log(`    Annualized Return: ${r.annualizedReturn.toFixed(2)}%`);
-    console.log(`    Max Drawdown:      ${r.maxDrawdown.toFixed(2)}%`);
-    console.log(`    Win Rate:          ${r.winRate.toFixed(1)}%`);
-    console.log(`    Total Trades:      ${r.totalTrades}`);
-    console.log(`    Avg Holding:       ${r.avgHoldingDays.toFixed(1)} days`);
-    console.log(`    Position Hold:     ${r.positionHoldPercent.toFixed(1)}%`);
+  console.log(
+    '\nentry(年率)  exit(年率)  avgD | trades hold% Sharpe | gross年率 | ' +
+      ROUND_TRIP_COSTS.map((c) => `net年率(cost${c.toFixed(1)}%)`).join(' ')
+  );
+  for (const { result: r, netAnnualized } of netResults.slice(0, 8)) {
+    const p = r.params;
+    console.log(
+      `${annualPct(p.entryThreshold).toFixed(1).padStart(9)}% ` +
+        `${annualPct(p.exitThreshold).toFixed(1).padStart(9)}% ` +
+        `${String(p.avgDays).padStart(4)}d | ` +
+        `${String(r.totalTrades).padStart(5)} ${r.positionHoldPercent.toFixed(0).padStart(4)}% ` +
+        `${r.sharpeRatio.toFixed(2).padStart(6)} | ` +
+        `${r.annualizedReturn.toFixed(2).padStart(8)}% | ` +
+        netAnnualized.map((n) => `${n.toFixed(2).padStart(14)}%`).join(' ')
+    );
   }
 
-  console.log('\n' + '='.repeat(100));
+  const best = netResults[0];
+  const bp = best.result.params;
+  console.log(
+    `\n🏆 BEST (net, cost ${ROUND_TRIP_COSTS[1]}%): ` +
+      `entry ${bp.avgDays}d MA > ${annualPct(bp.entryThreshold).toFixed(1)}%年率 / ` +
+      `exit < ${annualPct(bp.exitThreshold).toFixed(1)}%年率 → ` +
+      `net ${best.netAnnualized[1].toFixed(2)}%/yr (gross ${best.result.annualizedReturn.toFixed(2)}%, ` +
+      `${best.result.totalTrades} trades, hold ${best.result.positionHoldPercent.toFixed(0)}%)`
+  );
+}
 
-  // Best result
-  const best = results[0];
-  console.log('\n🏆 BEST STRATEGY:');
-  console.log(`  Entry: ${best.params.avgDays}-day avg > ${(best.params.entryThreshold * 100).toFixed(3)}%`);
-  console.log(`  Exit:  ${best.params.avgDays}-day avg < ${(best.params.exitThreshold * 100).toFixed(3)}%`);
-  console.log(`\n  Sharpe: ${best.sharpeRatio.toFixed(2)} | Calmar: ${best.calmarRatio.toFixed(2)} | Return: ${best.annualizedReturn.toFixed(2)}% | Max DD: ${best.maxDrawdown.toFixed(2)}%`);
+async function main() {
+  console.log('Running Funding Rate Arbitrage Backtest...');
+  console.log(`Entry grid: ${ENTRY_THRESHOLDS.map((t) => annualPct(t).toFixed(1) + '%').join(', ')} (年率換算)`);
+  console.log(`Exit grid:  ${EXIT_THRESHOLDS.map((t) => annualPct(t).toFixed(1) + '%').join(', ')} (年率換算)`);
+  console.log(`Avg days:   ${AVG_DAYS_LIST.join(', ')}`);
+  console.log(`Round-trip costs: ${ROUND_TRIP_COSTS.map((c) => c.toFixed(1) + '%').join(' / ')} of capital per trade`);
 
-  // Detailed trades for best strategy
-  console.log(`\n  Total Trades: ${best.totalTrades}`);
-  if (best.trades.length > 0) {
-    console.log(`\n  First 5 Trades:`);
-    for (let i = 0; i < Math.min(5, best.trades.length); i++) {
-      const t = best.trades[i];
-      console.log(
-        `    ${i + 1}. Entry: ${t.entryDate.toISOString().slice(0, 10)} (${(t.entryRate * 100).toFixed(3)}%) | ` +
-        `Exit: ${t.exitDate?.toISOString().slice(0, 10)} (${((t.exitRate || 0) * 100).toFixed(3)}%) | ` +
-        `Holding: ${(t.holdingPeriods / 3).toFixed(1)}d | ` +
-        `Earned: ¥${t.fundingEarned.toFixed(0)}`
-      );
-    }
+  const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  for (const symbol of ['BTCUSDT', 'ETHUSDT']) {
+    await runGrid(symbol, '全期間', undefined);
+    await runGrid(symbol, '直近90日', since90);
   }
 
-  console.log('\n' + '='.repeat(100));
   console.log('\n✓ Backtest complete!');
 }
 
